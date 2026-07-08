@@ -10,6 +10,7 @@ Define the high-level boundaries for an offline, single-player One Piece TCG pra
 - `GameState` is the authoritative source of truth for engine-owned state.
 - Engine transitions are performed through immutable action handlers rather than direct object mutation.
 - The initial engine milestone is intentionally non-UI and limited to `START_GAME`, `DRAW_CARD`, and `END_TURN`.
+- Deck input now flows through a dedicated parser, validator, and builder pipeline before entering the engine.
 
 ### Proposed Layering
 
@@ -21,6 +22,7 @@ Engine and rules services
   -> own GameState, action validation, and immutable state transitions
 Card and deck models
   -> define static source data used to create game instances
+  -> parse and validate raw decklists into clean Deck objects
 Storage adapters
   -> persist or restore engine snapshots later
 ```
@@ -29,8 +31,8 @@ Storage adapters
 
 ```text
 src/ai        AI contracts that must use the same legal GameAction and ActionResult flow as human play
-src/cards     Static card definitions and placeholder sample data shapes
-src/deck      Deck definitions and future validation-facing types
+src/cards     Static card definitions and placeholder sample card data
+src/deck      Deck definitions, parser, validator, and deck construction helpers
 src/engine    Source-of-truth game state, actions, logs, errors, and transition helpers
 src/rules     Future rule resolution modules layered on top of the engine contract
 src/storage   Future local persistence and replay adapters
@@ -44,7 +46,6 @@ docs          Supplemental notes, diagrams, or ADRs
 - Card effects and scripting.
 - Combat resolution.
 - External card API integration.
-- Deck importing or parsing workflows.
 - AI gameplay behavior.
 - Desktop packaging.
 
@@ -54,6 +55,7 @@ docs          Supplemental notes, diagrams, or ADRs
 - Add selectors or derived view-model utilities so the UI consumes stable read-only shapes.
 - Introduce stricter module boundaries if the engine grows into multiple rule packages.
 - Expand AI modules to evaluate and select only legal engine actions instead of special-casing separate AI pathways.
+- Replace placeholder card data with a richer local card source before attempting real competitive deck support.
 
 ## Open Questions
 

@@ -8,6 +8,7 @@ Describe how card data should be represented in a way that is easy to validate, 
 
 - Define shared card identity and classification fields such as type, color, rarity, and placeholder text.
 - Support placeholder or hand-authored sample card records only.
+- Maintain a tiny local sample card database for parser and validator tests.
 - Keep the model neutral enough for future imports from local JSON or curated card lists.
 
 ## Explicitly Out Of Scope
@@ -15,7 +16,7 @@ Describe how card data should be represented in a way that is easy to validate, 
 - Full official card catalog.
 - Copyrighted scans, logos, or official promotional assets.
 - Effect parser design.
-- Integration with third-party card APIs.
+- Integration with third-party card APIs or external card databases.
 
 ## Future Expansion Notes
 
@@ -23,6 +24,7 @@ Describe how card data should be represented in a way that is easy to validate, 
 - Separate raw card definitions from instantiated in-game card copies.
 - Introduce schema validation for local card JSON files.
 - Track set, trait, attribute, and legality metadata when deck building is implemented.
+- Replace the tiny placeholder sample set with a larger curated local database in a later milestone, still without relying on external APIs.
 
 ## Open Questions
 

@@ -2,30 +2,44 @@
 
 ## Purpose
 
-Define the future validation rules and data boundaries for practice decks without implementing deck parsing or enforcement logic yet.
+Define the first real deck input pipeline for practice decks: parse raw decklists, validate basic legality, and produce clean `Deck` objects for the game engine.
 
 ## Current Scope
 
-- Establish shared deck and deck-entry contracts.
-- Reserve structure for leader cards, main deck contents, and optional metadata.
-- Support a small future library of practice decks built from placeholder or curated local data.
+- Raw decklists currently accept these line formats:
+  `4x OP01-001`
+  `4 OP01-001`
+  `OP01-001 x4`
+  `OP01-001 4`
+- Parsing ignores blank lines, trims whitespace, normalizes card ids, and reports parse problems with original line numbers.
+- Validation currently checks:
+  exactly 1 Leader
+  exactly 50 main deck cards
+  no more than 4 copies of the same non-Leader card
+  all card ids exist in the local placeholder card database
+  main deck cards match the Leader color rules
+  Leader cards do not appear in the main deck
+- `buildDeckFromList` returns parsed entries, parse errors, validation errors, and a `Deck` object only when the full pipeline is valid.
 
 ## Explicitly Out Of Scope
 
-- Deck import formats.
-- Automatic rule validation.
+- Banned or restricted lists.
+- Format rotation.
+- DON!! deck validation.
+- Alternate art equivalency rules.
+- Complex leader-specific deckbuilding rules.
 - Banlist support.
 - User-facing deck builder workflows.
 
 ## Future Expansion Notes
 
-- Add validation helpers for card counts, leader constraints, and color matching.
-- Support versioned deck definitions so practice lists stay compatible with engine changes.
-- Introduce fixture decks for tests before building a full deck management interface.
-- Consider separate schemas for saved user decks versus internal simulation-ready decks.
+- Support named deck metadata blocks or import/export formats once the project needs richer persistence.
+- Add legality helpers for future real card database integration while keeping parse and validation layers separate.
+- Introduce fixture decks for multiple practice archetypes once the first starter decks are chosen.
+- Consider separate schemas for saved user decks versus internal engine-ready decks.
 
 ## Open Questions
 
-- Should deck validation produce a boolean result, structured errors, or both?
-- Will placeholder practice decks be stored as TypeScript modules or local JSON files?
-- How should DON!! deck handling be represented once deck assembly rules are enforced?
+- Should future deck importers preserve comments and sections for round-tripping user deck files?
+- Will saved practice decks eventually live as TypeScript fixtures, JSON files, or user-authored text blobs?
+- How should DON!! deck handling be modeled once full setup rules are introduced?
