@@ -8,7 +8,8 @@ export enum ActionType {
   DrawCard = 'DRAW_CARD',
   EndTurn = 'END_TURN',
   PlayCard = 'PLAY_CARD',
-  Attack = 'ATTACK',
+  DeclareAttack = 'DECLARE_ATTACK',
+  ResolveAttack = 'RESOLVE_ATTACK',
   ActivateEffect = 'ACTIVATE_EFFECT',
 }
 
@@ -56,6 +57,21 @@ export interface PlayCardAction extends BaseGameAction {
   }
 }
 
+export interface AttackPayload {
+  readonly attackerInstanceId: string
+  readonly targetInstanceId: string
+}
+
+export interface DeclareAttackAction extends BaseGameAction {
+  readonly type: ActionType.DeclareAttack
+  readonly payload: AttackPayload
+}
+
+export interface ResolveAttackAction extends BaseGameAction {
+  readonly type: ActionType.ResolveAttack
+  readonly payload: AttackPayload
+}
+
 export interface UnsupportedGameAction extends BaseGameAction {
   readonly type: Exclude<
     ActionType,
@@ -64,6 +80,8 @@ export interface UnsupportedGameAction extends BaseGameAction {
     | ActionType.DrawCard
     | ActionType.EndTurn
     | ActionType.PlayCard
+    | ActionType.DeclareAttack
+    | ActionType.ResolveAttack
   >
   readonly payload?: Readonly<Record<string, unknown>>
 }
@@ -74,6 +92,8 @@ export type GameAction =
   | DrawCardAction
   | EndTurnAction
   | PlayCardAction
+  | DeclareAttackAction
+  | ResolveAttackAction
   | UnsupportedGameAction
 
 export interface SuccessfulActionResult {

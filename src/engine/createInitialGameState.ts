@@ -14,6 +14,7 @@ export function createInitialGameState(
   return {
     id: options.gameId ?? `game-${now}`,
     status: 'NOT_STARTED',
+    gameOver: false,
     phase: GamePhase.Setup,
     players: {},
     playerOrder: [],

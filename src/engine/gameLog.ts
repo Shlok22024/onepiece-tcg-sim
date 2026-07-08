@@ -5,9 +5,10 @@ export function createGameLogEntry(
   action: GameAction,
   message: string,
   timestamp: number = action.createdAt,
+  suffix?: string,
 ): GameLogEntry {
   return {
-    id: `log-${action.id}`,
+    id: suffix === undefined ? `log-${action.id}` : `log-${action.id}-${suffix}`,
     actionId: action.id,
     actionType: action.type,
     playerId: action.playerId,

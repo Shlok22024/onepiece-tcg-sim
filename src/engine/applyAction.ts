@@ -1,8 +1,9 @@
-import { sampleCardsById } from '../cards/sampleCards.ts'
 import { CardType } from '../cards/cardTypes.ts'
+import { sampleCardsById } from '../cards/sampleCards.ts'
 import {
   ActionType,
   type ActionResult,
+  type AttackPayload,
   type GameAction,
   type StartGamePlayerConfig,
 } from './actionTypes.ts'
@@ -32,6 +33,8 @@ const supportedActions = new Set<ActionType>([
   ActionType.DrawCard,
   ActionType.EndTurn,
   ActionType.PlayCard,
+  ActionType.DeclareAttack,
+  ActionType.ResolveAttack,
 ])
 
 function createFailureResult(
@@ -62,6 +65,18 @@ function createSuccessResult(
     state: nextState,
     logEntry,
   }
+}
+
+function appendActionLog(
+  state: GameState,
+  action: GameAction,
+  message: string,
+  suffix: string,
+): GameState {
+  return appendGameLog(
+    state,
+    createGameLogEntry(action, message, state.updatedAt, suffix),
+  )
 }
 
 function createEmptyZones(): PlayerZones {
@@ -128,11 +143,18 @@ function buildPlayerState(player: StartGamePlayerConfig): {
 } {
   const leaderInstance = createLeaderInstance(player)
   const deckInstances = expandMainDeck(player)
-  const emptyZones = createEmptyZones()
+  const leaderLife = sampleCardsById[player.deck.leaderCardId]?.life ?? 0
+  const lifeCount = Math.min(leaderLife, deckInstances.length)
+  const lifeInstances = deckInstances.slice(0, lifeCount).map((instance) => ({
+    ...instance,
+    zone: PlayerZone.Life,
+  }))
+  const remainingDeckInstances = deckInstances.slice(lifeCount)
   const zones: PlayerZones = {
-    ...emptyZones,
+    ...createEmptyZones(),
     [PlayerZone.Leader]: [leaderInstance.instanceId],
-    [PlayerZone.Deck]: deckInstances.map((instance) => instance.instanceId),
+    [PlayerZone.Life]: lifeInstances.map((instance) => instance.instanceId),
+    [PlayerZone.Deck]: remainingDeckInstances.map((instance) => instance.instanceId),
   }
 
   return {
@@ -148,7 +170,7 @@ function buildPlayerState(player: StartGamePlayerConfig): {
       restedDon: 0,
       totalDonInPlay: 0,
     },
-    cardInstances: [leaderInstance, ...deckInstances],
+    cardInstances: [leaderInstance, ...lifeInstances, ...remainingDeckInstances],
   }
 }
 
@@ -185,10 +207,94 @@ function replacePlayerState(
   }
 }
 
+function replaceCardInstance(
+  state: GameState,
+  cardInstance: CardInstance,
+  updatedAt: number,
+): GameState {
+  return {
+    ...state,
+    cardInstances: {
+      ...state.cardInstances,
+      [cardInstance.instanceId]: cardInstance,
+    },
+    updatedAt,
+  }
+}
+
+function getCardPower(cardInstance: CardInstance): number {
+  return sampleCardsById[cardInstance.cardId]?.power ?? 0
+}
+
+function updateCardZone(
+  player: PlayerState,
+  cardInstanceId: CardInstanceId,
+  fromZone: Zone,
+  toZone: Zone,
+): PlayerState {
+  return {
+    ...player,
+    zones: {
+      ...player.zones,
+      [fromZone]: player.zones[fromZone].filter((id) => id !== cardInstanceId),
+      [toZone]: [...player.zones[toZone], cardInstanceId],
+    },
+  }
+}
+
+function readyBoardCards(
+  state: GameState,
+  player: PlayerState,
+): {
+  readonly state: GameState
+  readonly player: PlayerState
+  readonly readiedCardCount: number
+} {
+  const boardCardIds = [
+    ...player.zones[PlayerZone.Leader],
+    ...player.zones[PlayerZone.CharacterArea],
+  ]
+  let nextState = state
+  let readiedCardCount = 0
+
+  for (const cardInstanceId of boardCardIds) {
+    const instance = nextState.cardInstances[cardInstanceId]
+
+    if (!instance.isRested) {
+      continue
+    }
+
+    nextState = replaceCardInstance(
+      nextState,
+      {
+        ...instance,
+        isRested: false,
+      },
+      state.updatedAt,
+    )
+    readiedCardCount += 1
+  }
+
+  return {
+    state: nextState,
+    player: nextState.players[player.id] ?? player,
+    readiedCardCount,
+  }
+}
+
 function validateGameStarted(
   state: GameState,
   action: GameAction,
 ): ActionResult | null {
+  if (state.gameOver || state.status === 'COMPLETE') {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.GameAlreadyOver,
+      'The game is already over.',
+    )
+  }
+
   if (!isGameInProgress(state)) {
     return createFailureResult(
       state,
@@ -296,22 +402,27 @@ function enterPhase(
   }
 
   if (phase === GamePhase.Refresh) {
-    const refreshResult = readyRestedDon(activePlayer)
-    const nextState = replacePlayerState(
+    const refreshDonResult = readyRestedDon(activePlayer)
+    const donReadyState = replacePlayerState(
       {
         ...state,
         phase,
       },
-      refreshResult.player,
+      refreshDonResult.player,
       updatedAt,
+    )
+    const refreshBoardResult = readyBoardCards(
+      donReadyState,
+      refreshDonResult.player,
     )
 
     return {
-      state: nextState,
-      detailMessage:
-        refreshResult.refreshedDon > 0
-          ? `${activePlayer.displayName} entered refresh and readied ${refreshResult.refreshedDon} DON.`
-          : `${activePlayer.displayName} entered refresh with no rested DON to ready.`,
+      state: {
+        ...refreshBoardResult.state,
+        phase,
+        updatedAt,
+      },
+      detailMessage: `${activePlayer.displayName} entered refresh and readied ${refreshDonResult.refreshedDon} DON plus ${refreshBoardResult.readiedCardCount} board cards.`,
     }
   }
 
@@ -391,6 +502,7 @@ function startGame(state: GameState, action: GameAction): ActionResult {
   const nextState: GameState = {
     ...state,
     status: 'IN_PROGRESS',
+    gameOver: false,
     phase: firstTurnPhase,
     players: {
       [players[0].id]: firstPlayer.playerState,
@@ -409,6 +521,9 @@ function startGame(state: GameState, action: GameAction): ActionResult {
       hasPerformedNormalDraw: false,
     },
     updatedAt,
+    winnerId: undefined,
+    loserId: undefined,
+    endReason: undefined,
   }
 
   return createSuccessResult(
@@ -439,7 +554,7 @@ function advancePhase(state: GameState, action: GameAction): ActionResult {
   const phaseTransition = enterPhase(state, nextPhase, action.createdAt)
 
   return createSuccessResult(
-    state.phase === nextPhase ? state : phaseTransition.state,
+    phaseTransition.state,
     action,
     phaseTransition.detailMessage,
   )
@@ -503,25 +618,22 @@ function drawCard(state: GameState, action: GameAction): ActionResult {
   }
 
   const drawnCardInstanceId = deckZone[0]
-  const remainingDeck = deckZone.slice(1)
-  const updatedPlayer: PlayerState = {
-    ...targetPlayer,
-    zones: {
-      ...targetPlayer.zones,
-      [PlayerZone.Deck]: remainingDeck,
-      [PlayerZone.Hand]: [...targetPlayer.zones[PlayerZone.Hand], drawnCardInstanceId],
-    },
-  }
+  const updatedPlayer = updateCardZone(
+    targetPlayer,
+    drawnCardInstanceId,
+    PlayerZone.Deck,
+    PlayerZone.Hand,
+  )
   const updatedCardInstance: CardInstance = {
     ...state.cardInstances[drawnCardInstanceId],
     zone: PlayerZone.Hand,
   }
   const nextState: GameState = {
-    ...replacePlayerState(state, updatedPlayer, action.createdAt),
-    cardInstances: {
-      ...state.cardInstances,
-      [drawnCardInstanceId]: updatedCardInstance,
-    },
+    ...replaceCardInstance(
+      replacePlayerState(state, updatedPlayer, action.createdAt),
+      updatedCardInstance,
+      action.createdAt,
+    ),
     turn: isInternalDraw
       ? state.turn
       : {
@@ -616,8 +728,7 @@ function playCard(state: GameState, action: GameAction): ActionResult {
     )
   }
 
-  const cost = cardDefinition.cost ?? 0
-  const costResult = payCost(activePlayer, cost)
+  const costResult = payCost(activePlayer, cardDefinition.cost ?? 0)
 
   if (!costResult.ok) {
     return {
@@ -628,36 +739,362 @@ function playCard(state: GameState, action: GameAction): ActionResult {
     }
   }
 
-  const updatedPlayer: PlayerState = {
-    ...costResult.player,
-    zones: {
-      ...costResult.player.zones,
-      [PlayerZone.Hand]: costResult.player.zones[PlayerZone.Hand].filter(
-        (instanceId) => instanceId !== cardInstanceId,
-      ),
-      [PlayerZone.CharacterArea]: [
-        ...costResult.player.zones[PlayerZone.CharacterArea],
-        cardInstanceId,
-      ],
-    },
-  }
+  const updatedPlayer = updateCardZone(
+    costResult.player,
+    cardInstanceId,
+    PlayerZone.Hand,
+    PlayerZone.CharacterArea,
+  )
   const updatedCardInstance: CardInstance = {
     ...cardInstance,
     zone: PlayerZone.CharacterArea,
     isRested: false,
   }
-  const nextState: GameState = {
-    ...replacePlayerState(state, updatedPlayer, action.createdAt),
-    cardInstances: {
-      ...state.cardInstances,
-      [cardInstanceId]: updatedCardInstance,
-    },
-  }
+  const nextState = replaceCardInstance(
+    replacePlayerState(state, updatedPlayer, action.createdAt),
+    updatedCardInstance,
+    action.createdAt,
+  )
 
   return createSuccessResult(
     nextState,
     action,
-    `${activePlayer.displayName} played ${cardDefinition.name} by paying ${cost} DON.`,
+    `${activePlayer.displayName} played ${cardDefinition.name} by paying ${cardDefinition.cost ?? 0} DON.`,
+  )
+}
+
+function resolveAttackPayload(
+  action: GameAction,
+): AttackPayload | null {
+  if (
+    action.type === ActionType.DeclareAttack ||
+    action.type === ActionType.ResolveAttack
+  ) {
+    return action.payload
+  }
+
+  return null
+}
+
+function validateAttackParticipants(
+  state: GameState,
+  action: GameAction,
+  payload: AttackPayload,
+): {
+  readonly attacker: CardInstance
+  readonly target: CardInstance
+  readonly defendingPlayer: PlayerState
+} | ActionResult {
+  const activePlayer = resolveActivePlayer(state)
+
+  if (activePlayer === null) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAction,
+      'The active player could not be resolved.',
+    )
+  }
+
+  const attacker = state.cardInstances[payload.attackerInstanceId]
+  const target = state.cardInstances[payload.targetInstanceId]
+
+  if (attacker === undefined || target === undefined) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.UnknownCardInstance,
+      'Both attacker and target card instances must exist.',
+    )
+  }
+
+  if (attacker.controllerId !== activePlayer.id) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAttacker,
+      'The attacker must belong to the active player.',
+    )
+  }
+
+  if (
+    attacker.zone !== PlayerZone.Leader &&
+    attacker.zone !== PlayerZone.CharacterArea
+  ) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAttacker,
+      'Only the active leader or a character on the board can attack.',
+    )
+  }
+
+  if (attacker.isRested) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.AlreadyRestedAttacker,
+      'A rested attacker cannot attack again this turn.',
+    )
+  }
+
+  if (target.controllerId === activePlayer.id) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.CannotAttackOwnCard,
+      'An attacker cannot target its own leader or characters.',
+    )
+  }
+
+  if (target.zone === PlayerZone.Leader) {
+    const defendingPlayer = resolvePlayer(state, target.controllerId)
+
+    if (defendingPlayer === null) {
+      return createFailureResult(
+        state,
+        action,
+        GameErrorCode.InvalidAttackTarget,
+        'The defending player could not be resolved for the chosen leader target.',
+      )
+    }
+
+    return {
+      attacker,
+      target,
+      defendingPlayer,
+    }
+  }
+
+  if (target.zone !== PlayerZone.CharacterArea) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAttackTarget,
+      'The target must be an opposing leader or an opposing rested character.',
+    )
+  }
+
+  if (!target.isRested) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.TargetMustBeRestedCharacter,
+      'Only opposing rested characters can be targeted for battle in this milestone.',
+    )
+  }
+
+  const defendingPlayer = resolvePlayer(state, target.controllerId)
+
+  if (defendingPlayer === null) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAttackTarget,
+      'The defending player could not be resolved for the chosen character target.',
+    )
+  }
+
+  return {
+    attacker,
+    target,
+    defendingPlayer,
+  }
+}
+
+function knockOutCharacter(
+  state: GameState,
+  action: GameAction,
+  player: PlayerState,
+  cardInstance: CardInstance,
+  suffix: string,
+): GameState {
+  const updatedPlayer = updateCardZone(
+    player,
+    cardInstance.instanceId,
+    PlayerZone.CharacterArea,
+    PlayerZone.Trash,
+  )
+  const updatedCardInstance: CardInstance = {
+    ...cardInstance,
+    zone: PlayerZone.Trash,
+    isRested: false,
+  }
+  const movedState = replaceCardInstance(
+    replacePlayerState(state, updatedPlayer, action.createdAt),
+    updatedCardInstance,
+    action.createdAt,
+  )
+  const cardName = sampleCardsById[cardInstance.cardId]?.name ?? cardInstance.cardId
+
+  return appendActionLog(
+    movedState,
+    action,
+    `${cardName} was KO'd and moved to trash.`,
+    suffix,
+  )
+}
+
+function dealLeaderDamage(
+  state: GameState,
+  action: GameAction,
+  defendingPlayer: PlayerState,
+): {
+  readonly state: GameState
+  readonly message: string
+} {
+  const lifeZone = defendingPlayer.zones[PlayerZone.Life]
+
+  if (lifeZone.length === 0) {
+    return {
+      state: {
+        ...state,
+        status: 'COMPLETE',
+        gameOver: true,
+        winnerId: action.playerId,
+        loserId: defendingPlayer.id,
+        endReason: 'LEADER_DAMAGE_AT_ZERO_LIFE',
+        updatedAt: action.createdAt,
+      },
+      message: `${state.players[action.playerId].displayName} dealt the final damage and won the game.`,
+    }
+  }
+
+  const lifeCardId = lifeZone[0]
+  const updatedDefendingPlayer = updateCardZone(
+    defendingPlayer,
+    lifeCardId,
+    PlayerZone.Life,
+    PlayerZone.Hand,
+  )
+  const updatedLifeCard: CardInstance = {
+    ...state.cardInstances[lifeCardId],
+    zone: PlayerZone.Hand,
+  }
+  const nextState = replaceCardInstance(
+    replacePlayerState(state, updatedDefendingPlayer, action.createdAt),
+    updatedLifeCard,
+    action.createdAt,
+  )
+
+  return {
+    state: nextState,
+    message: `${updatedDefendingPlayer.displayName} lost 1 life and added that life card to hand.`,
+  }
+}
+
+function resolveCombat(
+  state: GameState,
+  action: GameAction,
+  attacker: CardInstance,
+  target: CardInstance,
+  defendingPlayer: PlayerState,
+): {
+  readonly state: GameState
+  readonly message: string
+} {
+  if (target.zone === PlayerZone.Leader) {
+    return dealLeaderDamage(state, action, defendingPlayer)
+  }
+
+  const attackerPower = getCardPower(attacker)
+  const targetPower = getCardPower(target)
+  const attackerCardType = sampleCardsById[attacker.cardId]?.type
+  const targetCardType = sampleCardsById[target.cardId]?.type
+  let nextState = state
+  const battleMessages: string[] = []
+
+  if (attackerPower > targetPower) {
+    nextState = knockOutCharacter(
+      nextState,
+      action,
+      defendingPlayer,
+      target,
+      'target-ko',
+    )
+    battleMessages.push('The stronger attacker KO\'d the defending character.')
+  } else if (
+    attackerPower < targetPower &&
+    attackerCardType === CardType.Character &&
+    targetCardType === CardType.Character
+  ) {
+    const attackingPlayer = resolvePlayer(nextState, attacker.controllerId)
+
+    if (attackingPlayer !== null) {
+      nextState = knockOutCharacter(
+        nextState,
+        action,
+        attackingPlayer,
+        attacker,
+        'attacker-ko',
+      )
+    }
+    battleMessages.push('The weaker attacking character was KO\'d in battle.')
+  } else {
+    battleMessages.push('The battle ended with no characters KO\'d.')
+  }
+
+  return {
+    state: nextState,
+    message: battleMessages.join(' '),
+  }
+}
+
+function executeImmediateAttack(
+  state: GameState,
+  action: GameAction,
+): ActionResult {
+  const validationFailure = validateActivePlayerAction(state, action)
+
+  if (validationFailure !== null) {
+    return validationFailure
+  }
+
+  if (state.phase !== GamePhase.Main) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.IllegalPhaseAction,
+      'Attacks are only legal during the MAIN phase in this milestone.',
+    )
+  }
+
+  const payload = resolveAttackPayload(action)
+
+  if (payload === null) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAction,
+      'An attack payload is required to resolve combat.',
+    )
+  }
+
+  const validatedParticipants = validateAttackParticipants(state, action, payload)
+
+  if ('ok' in validatedParticipants) {
+    return validatedParticipants
+  }
+
+  const { attacker, target, defendingPlayer } = validatedParticipants
+  const restedAttacker: CardInstance = {
+    ...attacker,
+    isRested: true,
+  }
+  const declaredState = replaceCardInstance(state, restedAttacker, action.createdAt)
+  const resolution = resolveCombat(
+    declaredState,
+    action,
+    restedAttacker,
+    target,
+    defendingPlayer,
+  )
+  const targetName = sampleCardsById[target.cardId]?.name ?? target.cardId
+
+  return createSuccessResult(
+    resolution.state,
+    action,
+    `${state.players[action.playerId].displayName} attacked ${targetName}. ${resolution.message}`,
   )
 }
 
@@ -739,6 +1176,9 @@ export function applyAction(
       return drawCard(state, action)
     case ActionType.PlayCard:
       return playCard(state, action)
+    case ActionType.DeclareAttack:
+    case ActionType.ResolveAttack:
+      return executeImmediateAttack(state, action)
     case ActionType.EndTurn:
       return endTurn(state, action)
     default:

@@ -1,17 +1,18 @@
 # OPTCG Single Player Practice Simulator
 
-Offline practice simulator foundation for a personal One Piece TCG project. The repository now includes a stricter TypeScript data model, a phase-based non-UI engine contract, basic Character card play with DON cost payment, and a deck parser and validation pipeline built on placeholder local card data.
+Offline practice simulator foundation for a personal One Piece TCG project. The repository now includes a stricter TypeScript data model, a phase-based non-UI engine contract, basic Character card play with DON cost payment, a first combat foundation, and a deck parser and validation pipeline built on placeholder local card data.
 
 ## Current Status
 
 - React + TypeScript + Vite project setup is in place, but React gameplay UI is intentionally out of scope for this milestone.
 - `GameState` is the engine source of truth and must only change through engine actions.
-- The engine now supports `START_GAME`, `ADVANCE_PHASE`, `DRAW_CARD`, `PLAY_CARD`, and `END_TURN` with phase-aware legality checks.
+- The engine now supports `START_GAME`, `ADVANCE_PHASE`, `DRAW_CARD`, `PLAY_CARD`, `DECLARE_ATTACK`, `RESOLVE_ATTACK`, and `END_TURN` with phase-aware legality checks.
 - Decklists can now be parsed, validated, and converted into clean `Deck` objects before they reach the engine.
 - The turn loop currently uses explicit phases and placeholder DON behavior to prepare for future combat and AI work.
 - Basic board development is now possible through Character card play from hand during `MAIN`.
+- A first combat layer now supports immediate attacks, vanilla power comparison, life damage, KO movement to trash, and game-over detection.
 - Vitest covers engine behavior plus deck parsing and validation rules.
-- Card effects, combat, AI gameplay behavior, external card APIs, and real card database integration are still intentionally out of scope.
+- Card effects, combat extensions like counters or blockers, AI gameplay behavior, external card APIs, and real card database integration are still intentionally out of scope.
 
 ## Tech Stack
 
@@ -43,7 +44,14 @@ Offline practice simulator foundation for a personal One Piece TCG project. The 
 - Entering `REFRESH` readies rested DON.
 - `PLAY_CARD` currently supports only Character cards from hand during `MAIN`, and cost payment moves active DON to rested DON.
 - Supported board-facing zones are `LEADER`, `HAND`, `DECK`, `LIFE`, `TRASH`, `CHARACTER_AREA`, and placeholder `STAGE_AREA`.
-- Card effects, Stage play, Event play, combat, and AI behavior are still not implemented yet.
+- Combat currently works as a single immediate step:
+  attackers must be active
+  targets are the opposing Leader or an opposing rested Character
+  attackers become rested on a successful declaration
+  Character-vs-Character battles use base power only
+  leader damage moves one life card to hand
+  attacking a leader at zero life ends the game
+- Counter windows, blockers, keywords, card effects, Stage/Event play, and AI behavior are still not implemented yet.
 
 ## Deck Input Notes
 
@@ -78,4 +86,4 @@ Additional planning and milestone notes live in:
 
 ## Next Recommended Step
 
-Connect validated deck objects into match setup so `START_GAME` consumes built decks from the parser pipeline, then add the next board-rule milestone: controlled stage/event support or basic combat setup on top of this cost-paying card-play system.
+Connect validated deck objects into match setup so `START_GAME` consumes built decks from the parser pipeline, then add the next combat milestone: counter windows, attack timing structure, and future blocker-ready battle state without introducing effects yet.

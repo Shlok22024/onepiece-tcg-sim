@@ -7,6 +7,7 @@ export type PlayerId = string
 export type CardInstanceId = string
 export type GameId = string
 export type GameStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETE'
+export type GameEndReason = 'LEADER_DAMAGE_AT_ZERO_LIFE'
 
 export enum Zone {
   Leader = 'LEADER',
@@ -76,6 +77,7 @@ export interface GameLogEntry {
 export interface GameState {
   readonly id: GameId
   readonly status: GameStatus
+  readonly gameOver: boolean
   readonly phase: GamePhase
   readonly players: Record<PlayerId, PlayerState>
   readonly playerOrder: readonly PlayerId[]
@@ -85,4 +87,6 @@ export interface GameState {
   readonly createdAt: number
   readonly updatedAt: number
   readonly winnerId?: PlayerId
+  readonly loserId?: PlayerId
+  readonly endReason?: GameEndReason
 }
