@@ -49,6 +49,13 @@ export interface EndTurnAction extends BaseGameAction {
   readonly type: ActionType.EndTurn
 }
 
+export interface PlayCardAction extends BaseGameAction {
+  readonly type: ActionType.PlayCard
+  readonly payload: {
+    readonly cardInstanceId: string
+  }
+}
+
 export interface UnsupportedGameAction extends BaseGameAction {
   readonly type: Exclude<
     ActionType,
@@ -56,6 +63,7 @@ export interface UnsupportedGameAction extends BaseGameAction {
     | ActionType.AdvancePhase
     | ActionType.DrawCard
     | ActionType.EndTurn
+    | ActionType.PlayCard
   >
   readonly payload?: Readonly<Record<string, unknown>>
 }
@@ -65,6 +73,7 @@ export type GameAction =
   | AdvancePhaseAction
   | DrawCardAction
   | EndTurnAction
+  | PlayCardAction
   | UnsupportedGameAction
 
 export interface SuccessfulActionResult {

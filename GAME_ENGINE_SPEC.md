@@ -8,9 +8,10 @@ Define the current non-UI game engine contract for an offline single-player simu
 
 - `GameState` is the engine source of truth for turn order, player zones, card instances, placeholder DON counts, and engine logs.
 - Card definitions are separate from in-game card instances so future rules can operate on board state without mutating source card data.
-- The engine currently supports four immutable placeholder actions: `START_GAME`, `ADVANCE_PHASE`, `DRAW_CARD`, and `END_TURN`.
+- The engine currently supports five immutable placeholder actions: `START_GAME`, `ADVANCE_PHASE`, `DRAW_CARD`, `PLAY_CARD`, and `END_TURN`.
 - Every engine action returns an `ActionResult` so callers receive either the next valid state or a structured failure.
 - Successful actions append a `GameLogEntry` to the authoritative game state.
+- Card instances now track `instanceId`, `zone`, `rested` status, and `attachedDonCount`, while card definitions remain immutable source data.
 - Phase sequence is currently:
   first turn starts in `DRAW`
   later turns start in `REFRESH`
@@ -22,12 +23,20 @@ Define the current non-UI game engine contract for an offline single-player simu
   entering `DON` grants up to 2 DON from the DON deck
   total DON in play cannot exceed 10
   entering `REFRESH` readies rested DON
+- Basic card play is intentionally narrow in this milestone:
+  only the active player may `PLAY_CARD`
+  `PLAY_CARD` is only legal during `MAIN`
+  only Character cards may be played
+  cost payment spends active DON by moving it to rested DON
+  played cards move from hand to `CHARACTER_AREA`
+- Board zones currently modeled in the engine are `LEADER`, `DECK`, `HAND`, `LIFE`, `TRASH`, `CHARACTER_AREA`, and `STAGE_AREA`, with stage behavior still out of scope.
 
 ## Explicitly Out Of Scope
 
 - Card effects and effect resolution.
 - Combat rules and attack sequencing.
 - Full OPTCG setup rules, mulligans, life setup, and detailed DON!! attachment or payment rules.
+- Event and Stage play behavior.
 - React gameplay UI.
 - External card APIs.
 - Desktop packaging.
@@ -37,6 +46,7 @@ Define the current non-UI game engine contract for an offline single-player simu
 - Add legality validation for more action types while keeping the same `GameAction` and `ActionResult` contract for both human and AI players.
 - Expand phase handling beyond the current placeholder flow once more rules are implemented.
 - Replace count-only DON tracking with card-level DON state once attachment and payment rules exist.
+- Extend `PLAY_CARD` into full board development rules such as stage play, event resolution, and future board-size constraints.
 - Introduce replay-friendly action metadata and richer engine logs for debugging and training use cases.
 - Add hidden-information views so the same `GameState` can remain authoritative while UI and AI consume filtered perspectives.
 

@@ -1,3 +1,5 @@
+import { sampleCardsById } from '../cards/sampleCards.ts'
+import { CardType } from '../cards/cardTypes.ts'
 import {
   ActionType,
   type ActionResult,
@@ -16,6 +18,7 @@ import type {
   Zone,
 } from './gameTypes.ts'
 import { Zone as PlayerZone } from './gameTypes.ts'
+import { payCost } from './payCost.ts'
 import {
   GamePhase,
   getFirstTurnPhase,
@@ -28,6 +31,7 @@ const supportedActions = new Set<ActionType>([
   ActionType.AdvancePhase,
   ActionType.DrawCard,
   ActionType.EndTurn,
+  ActionType.PlayCard,
 ])
 
 function createFailureResult(
@@ -85,12 +89,13 @@ function createCardInstanceId(
 
 function createLeaderInstance(player: StartGamePlayerConfig): CardInstance {
   return {
-    id: createCardInstanceId(player.id, PlayerZone.Leader, 0),
+    instanceId: createCardInstanceId(player.id, PlayerZone.Leader, 0),
     cardId: player.deck.leaderCardId,
     ownerId: player.id,
     controllerId: player.id,
     zone: PlayerZone.Leader,
     isRested: false,
+    attachedDonCount: 0,
   }
 }
 
@@ -101,12 +106,13 @@ function expandMainDeck(player: StartGamePlayerConfig): readonly CardInstance[] 
   for (const entry of player.deck.mainDeck) {
     for (let count = 0; count < entry.quantity; count += 1) {
       deckInstances.push({
-        id: createCardInstanceId(player.id, PlayerZone.Deck, ordinal),
+        instanceId: createCardInstanceId(player.id, PlayerZone.Deck, ordinal),
         cardId: entry.cardId,
         ownerId: player.id,
         controllerId: player.id,
         zone: PlayerZone.Deck,
         isRested: false,
+        attachedDonCount: 0,
       })
 
       ordinal += 1
@@ -122,10 +128,12 @@ function buildPlayerState(player: StartGamePlayerConfig): {
 } {
   const leaderInstance = createLeaderInstance(player)
   const deckInstances = expandMainDeck(player)
-  const zones = createEmptyZones()
-
-  zones[PlayerZone.Leader] = [leaderInstance.id]
-  zones[PlayerZone.Deck] = deckInstances.map((instance) => instance.id)
+  const emptyZones = createEmptyZones()
+  const zones: PlayerZones = {
+    ...emptyZones,
+    [PlayerZone.Leader]: [leaderInstance.instanceId],
+    [PlayerZone.Deck]: deckInstances.map((instance) => instance.instanceId),
+  }
 
   return {
     playerState: {
@@ -133,7 +141,7 @@ function buildPlayerState(player: StartGamePlayerConfig): {
       displayName: player.displayName,
       isHuman: player.isHuman,
       deckDefinition: player.deck,
-      leaderCardInstanceId: leaderInstance.id,
+      leaderCardInstanceId: leaderInstance.instanceId,
       zones,
       donDeckCount: 10,
       activeDon: 0,
@@ -391,7 +399,7 @@ function startGame(state: GameState, action: GameAction): ActionResult {
     playerOrder: [players[0].id, players[1].id],
     cardInstances: Object.fromEntries(
       [...firstPlayer.cardInstances, ...secondPlayer.cardInstances].map(
-        (instance) => [instance.id, instance],
+        (instance) => [instance.instanceId, instance],
       ),
     ),
     turn: {
@@ -430,7 +438,11 @@ function advancePhase(state: GameState, action: GameAction): ActionResult {
 
   const phaseTransition = enterPhase(state, nextPhase, action.createdAt)
 
-  return createSuccessResult(state.phase === nextPhase ? state : phaseTransition.state, action, phaseTransition.detailMessage)
+  return createSuccessResult(
+    state.phase === nextPhase ? state : phaseTransition.state,
+    action,
+    phaseTransition.detailMessage,
+  )
 }
 
 function drawCard(state: GameState, action: GameAction): ActionResult {
@@ -527,6 +539,128 @@ function drawCard(state: GameState, action: GameAction): ActionResult {
   )
 }
 
+function playCard(state: GameState, action: GameAction): ActionResult {
+  if (action.type !== ActionType.PlayCard) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAction,
+      'A PLAY_CARD action is required to play a card.',
+    )
+  }
+
+  const validationFailure = validateActivePlayerAction(state, action)
+
+  if (validationFailure !== null) {
+    return validationFailure
+  }
+
+  if (state.phase !== GamePhase.Main) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.IllegalPhaseAction,
+      'PLAY_CARD is only legal during the MAIN phase.',
+    )
+  }
+
+  const activePlayer = resolveActivePlayer(state)
+
+  if (activePlayer === null) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAction,
+      'The active player could not be resolved.',
+    )
+  }
+
+  const { cardInstanceId } = action.payload
+  const cardInstance = state.cardInstances[cardInstanceId]
+
+  if (cardInstance === undefined) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.UnknownCardInstance,
+      `Card instance ${cardInstanceId} could not be found.`,
+    )
+  }
+
+  if (!activePlayer.zones[PlayerZone.Hand].includes(cardInstanceId)) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.CardNotInHand,
+      'The chosen card must be in the active player hand to be played.',
+    )
+  }
+
+  const cardDefinition = sampleCardsById[cardInstance.cardId]
+
+  if (cardDefinition === undefined) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAction,
+      `Card definition ${cardInstance.cardId} could not be found in the placeholder card database.`,
+    )
+  }
+
+  if (cardDefinition.type !== CardType.Character) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.UnsupportedCardType,
+      'Only Character cards can be played in this milestone.',
+    )
+  }
+
+  const cost = cardDefinition.cost ?? 0
+  const costResult = payCost(activePlayer, cost)
+
+  if (!costResult.ok) {
+    return {
+      ok: false,
+      action,
+      state,
+      error: costResult.error,
+    }
+  }
+
+  const updatedPlayer: PlayerState = {
+    ...costResult.player,
+    zones: {
+      ...costResult.player.zones,
+      [PlayerZone.Hand]: costResult.player.zones[PlayerZone.Hand].filter(
+        (instanceId) => instanceId !== cardInstanceId,
+      ),
+      [PlayerZone.CharacterArea]: [
+        ...costResult.player.zones[PlayerZone.CharacterArea],
+        cardInstanceId,
+      ],
+    },
+  }
+  const updatedCardInstance: CardInstance = {
+    ...cardInstance,
+    zone: PlayerZone.CharacterArea,
+    isRested: false,
+  }
+  const nextState: GameState = {
+    ...replacePlayerState(state, updatedPlayer, action.createdAt),
+    cardInstances: {
+      ...state.cardInstances,
+      [cardInstanceId]: updatedCardInstance,
+    },
+  }
+
+  return createSuccessResult(
+    nextState,
+    action,
+    `${activePlayer.displayName} played ${cardDefinition.name} by paying ${cost} DON.`,
+  )
+}
+
 function endTurn(state: GameState, action: GameAction): ActionResult {
   const validationFailure = validateActivePlayerAction(state, action)
 
@@ -603,6 +737,8 @@ export function applyAction(
       return advancePhase(state, action)
     case ActionType.DrawCard:
       return drawCard(state, action)
+    case ActionType.PlayCard:
+      return playCard(state, action)
     case ActionType.EndTurn:
       return endTurn(state, action)
     default:

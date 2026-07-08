@@ -5,6 +5,7 @@ import {
   type AdvancePhaseAction,
   type DrawCardAction,
   type EndTurnAction,
+  type PlayCardAction,
   type StartGameAction,
   type StartGamePlayerConfig,
   type UnsupportedGameAction,
@@ -12,6 +13,7 @@ import {
 import { applyAction } from '../src/engine/applyAction.ts'
 import { createInitialGameState } from '../src/engine/createInitialGameState.ts'
 import { GameErrorCode } from '../src/engine/gameErrors.ts'
+import { payCost } from '../src/engine/payCost.ts'
 import { GamePhase } from '../src/engine/phaseTypes.ts'
 import { Zone } from '../src/engine/gameTypes.ts'
 
@@ -27,10 +29,11 @@ function createPlaceholderPlayers(): readonly [
       deck: {
         id: 'deck-1',
         name: 'Straw Hat Practice',
-        leaderCardId: 'leader-luffy',
+        leaderCardId: 'OP01-001',
         mainDeck: [
-          { cardId: 'char-zoro', quantity: 2 },
-          { cardId: 'event-guard-point', quantity: 1 },
+          { cardId: 'OP01-101', quantity: 2 },
+          { cardId: 'OP01-110', quantity: 1 },
+          { cardId: 'OP01-112', quantity: 1 },
         ],
         source: 'LOCAL_PLACEHOLDER',
       },
@@ -42,10 +45,10 @@ function createPlaceholderPlayers(): readonly [
       deck: {
         id: 'deck-2',
         name: 'Navy Practice',
-        leaderCardId: 'leader-smoker',
+        leaderCardId: 'OP01-002',
         mainDeck: [
-          { cardId: 'char-tashigi', quantity: 2 },
-          { cardId: 'event-white-out', quantity: 1 },
+          { cardId: 'OP02-101', quantity: 2 },
+          { cardId: 'OP02-102', quantity: 1 },
         ],
         source: 'LOCAL_PLACEHOLDER',
       },
@@ -112,6 +115,81 @@ function advanceToMainPhase() {
   }
 
   return secondAdvance.state
+}
+
+function advanceToMainPhaseWithDrawnCard() {
+  const startedState = createStartedGameState()
+  const drawResult = applyAction(startedState, {
+    id: 'draw-before-main',
+    type: ActionType.DrawCard,
+    playerId: 'player-1',
+    createdAt: 220,
+  })
+  expect(drawResult.ok).toBe(true)
+  if (!drawResult.ok) {
+    return startedState
+  }
+
+  const donResult = applyAction(
+    drawResult.state,
+    createAdvancePhaseAction('player-1', 'advance-don-before-main', 230),
+  )
+  expect(donResult.ok).toBe(true)
+  if (!donResult.ok) {
+    return drawResult.state
+  }
+
+  const mainResult = applyAction(
+    donResult.state,
+    createAdvancePhaseAction('player-1', 'advance-main-before-main', 240),
+  )
+  expect(mainResult.ok).toBe(true)
+  if (!mainResult.ok) {
+    return donResult.state
+  }
+
+  return mainResult.state
+}
+
+function findCardInstanceIdByCardId(
+  state: ReturnType<typeof createStartedGameState>,
+  playerId: string,
+  cardId: string,
+): string | undefined {
+  return state.players[playerId].zones[Zone.Hand].find(
+    (instanceId) => state.cardInstances[instanceId].cardId === cardId,
+  )
+}
+
+function injectCardIntoHand(
+  state: ReturnType<typeof createStartedGameState>,
+  playerId: string,
+  cardId: string,
+) {
+  const sourceInstanceId = state.players[playerId].zones[Zone.Deck][0]
+
+  return {
+    ...state,
+    players: {
+      ...state.players,
+      [playerId]: {
+        ...state.players[playerId],
+        zones: {
+          ...state.players[playerId].zones,
+          [Zone.Hand]: [...state.players[playerId].zones[Zone.Hand], sourceInstanceId],
+          [Zone.Deck]: state.players[playerId].zones[Zone.Deck].slice(1),
+        },
+      },
+    },
+    cardInstances: {
+      ...state.cardInstances,
+      [sourceInstanceId]: {
+        ...state.cardInstances[sourceInstanceId],
+        cardId,
+        zone: Zone.Hand,
+      },
+    },
+  }
 }
 
 describe('createInitialGameState', () => {
@@ -251,13 +329,188 @@ describe('applyAction', () => {
     }
   })
 
+  it('PLAY_CARD succeeds during MAIN phase with enough active DON', () => {
+    const mainState = advanceToMainPhaseWithDrawnCard()
+    const cardInstanceId = mainState.players['player-1'].zones[Zone.Hand][0]
+    const action: PlayCardAction = {
+      id: 'play-character',
+      type: ActionType.PlayCard,
+      playerId: 'player-1',
+      createdAt: 330,
+      payload: { cardInstanceId },
+    }
+
+    const result = applyAction(mainState, action)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      return
+    }
+
+    expect(result.state.players['player-1'].zones[Zone.CharacterArea]).toContain(
+      cardInstanceId,
+    )
+    expect(result.state.players['player-1'].zones[Zone.Hand]).not.toContain(
+      cardInstanceId,
+    )
+    expect(result.state.cardInstances[cardInstanceId].zone).toBe(
+      Zone.CharacterArea,
+    )
+    expect(result.state.cardInstances[cardInstanceId].isRested).toBe(false)
+  })
+
+  it('played card moves from hand to character area and pays DON cost', () => {
+    const mainState = advanceToMainPhaseWithDrawnCard()
+    const cardInstanceId = mainState.players['player-1'].zones[Zone.Hand][0]
+
+    const result = applyAction(mainState, {
+      id: 'play-cost-check',
+      type: ActionType.PlayCard,
+      playerId: 'player-1',
+      createdAt: 340,
+      payload: { cardInstanceId },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      return
+    }
+
+    expect(result.state.players['player-1'].activeDon).toBe(1)
+    expect(result.state.players['player-1'].restedDon).toBe(1)
+  })
+
+  it('PLAY_CARD fails outside MAIN phase', () => {
+    const startedState = createStartedGameState()
+    const drawResult = applyAction(startedState, {
+      id: 'draw-for-outside-main',
+      type: ActionType.DrawCard,
+      playerId: 'player-1',
+      createdAt: 350,
+    })
+    expect(drawResult.ok).toBe(true)
+    if (!drawResult.ok) {
+      return
+    }
+
+    const cardInstanceId = drawResult.state.players['player-1'].zones[Zone.Hand][0]
+    const result = applyAction(drawResult.state, {
+      id: 'play-outside-main',
+      type: ActionType.PlayCard,
+      playerId: 'player-1',
+      createdAt: 360,
+      payload: { cardInstanceId },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe(GameErrorCode.IllegalPhaseAction)
+    }
+  })
+
+  it('PLAY_CARD fails for inactive player', () => {
+    const mainState = advanceToMainPhaseWithDrawnCard()
+    const cardInstanceId = mainState.players['player-1'].zones[Zone.Hand][0]
+    const result = applyAction(mainState, {
+      id: 'play-inactive-player',
+      type: ActionType.PlayCard,
+      playerId: 'player-2',
+      createdAt: 370,
+      payload: { cardInstanceId },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe(GameErrorCode.NotActivePlayer)
+    }
+  })
+
+  it('PLAY_CARD fails when card is not in hand', () => {
+    const mainState = advanceToMainPhaseWithDrawnCard()
+    const unknownHandCard = mainState.players['player-1'].zones[Zone.Deck][0]
+    const result = applyAction(mainState, {
+      id: 'play-not-in-hand',
+      type: ActionType.PlayCard,
+      playerId: 'player-1',
+      createdAt: 380,
+      payload: { cardInstanceId: unknownHandCard },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe(GameErrorCode.CardNotInHand)
+    }
+  })
+
+  it('PLAY_CARD fails for unsupported card type', () => {
+    const mainState = injectCardIntoHand(
+      advanceToMainPhaseWithDrawnCard(),
+      'player-1',
+      'OP01-110',
+    )
+    const eventCardId =
+      findCardInstanceIdByCardId(mainState, 'player-1', 'OP01-110') ??
+      mainState.players['player-1'].zones[Zone.Hand][0]
+    const result = applyAction(mainState, {
+      id: 'play-unsupported-type',
+      type: ActionType.PlayCard,
+      playerId: 'player-1',
+      createdAt: 400,
+      payload: { cardInstanceId: eventCardId },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe(GameErrorCode.UnsupportedCardType)
+    }
+  })
+
+  it('PLAY_CARD fails with insufficient DON for expensive character', () => {
+    const expensiveCardState = injectCardIntoHand(
+      advanceToMainPhaseWithDrawnCard(),
+      'player-1',
+      'OP01-108',
+    )
+    const expensiveCardId =
+      findCardInstanceIdByCardId(expensiveCardState, 'player-1', 'OP01-108') ??
+      expensiveCardState.players['player-1'].zones[Zone.Hand][0]
+    const result = applyAction(expensiveCardState, {
+      id: 'play-expensive-character',
+      type: ActionType.PlayCard,
+      playerId: 'player-1',
+      createdAt: 410,
+      payload: { cardInstanceId: expensiveCardId },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe(GameErrorCode.InsufficientDon)
+    }
+  })
+
+  it('PLAY_CARD fails for unknown card instance', () => {
+    const mainState = advanceToMainPhaseWithDrawnCard()
+    const result = applyAction(mainState, {
+      id: 'play-unknown-instance',
+      type: ActionType.PlayCard,
+      playerId: 'player-1',
+      createdAt: 420,
+      payload: { cardInstanceId: 'missing-instance' },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe(GameErrorCode.UnknownCardInstance)
+    }
+  })
+
   it('END_TURN switches the active player', () => {
     const mainState = advanceToMainPhase()
     const action: EndTurnAction = {
       id: 'end-turn',
       type: ActionType.EndTurn,
       playerId: 'player-1',
-      createdAt: 400,
+      createdAt: 430,
     }
 
     const result = applyAction(mainState, action)
@@ -279,7 +532,7 @@ describe('applyAction', () => {
       id: 'end-illegal',
       type: ActionType.EndTurn,
       playerId: 'player-1',
-      createdAt: 410,
+      createdAt: 440,
     }
 
     const result = applyAction(startedState, action)
@@ -405,8 +658,8 @@ describe('applyAction', () => {
   it('unsupported or invalid actions fail cleanly', () => {
     const startedState = createStartedGameState()
     const unsupportedAction: UnsupportedGameAction = {
-      id: 'action-play-card',
-      type: ActionType.PlayCard,
+      id: 'action-attack-card',
+      type: ActionType.Attack,
       playerId: 'player-1',
       createdAt: 600,
       payload: { test: true },
@@ -420,30 +673,53 @@ describe('applyAction', () => {
     }
   })
 
-  it('successful phase actions add game log entries', () => {
-    const initialState = createInitialGameState({ gameId: 'game-1', now: 0 })
-    const startResult = applyAction(
-      initialState,
-      createStartGameAction(createPlaceholderPlayers()),
-    )
+  it('successful PLAY_CARD creates a game log entry', () => {
+    const mainState = advanceToMainPhaseWithDrawnCard()
+    const cardInstanceId = mainState.players['player-1'].zones[Zone.Hand][0]
+    const result = applyAction(mainState, {
+      id: 'play-log-entry',
+      type: ActionType.PlayCard,
+      playerId: 'player-1',
+      createdAt: 610,
+      payload: { cardInstanceId },
+    })
 
-    expect(startResult.ok).toBe(true)
-    if (!startResult.ok) {
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
       return
     }
 
-    const advanceResult = applyAction(
-      startResult.state,
-      createAdvancePhaseAction('player-1', 'advance-log', 700),
-    )
+    expect(result.state.log.at(-1)?.actionType).toBe(ActionType.PlayCard)
+    expect(result.state.log.at(-1)?.message).toContain('played')
+  })
+})
 
-    expect(advanceResult.ok).toBe(true)
-    if (!advanceResult.ok) {
+describe('payCost', () => {
+  it('cost payment helper succeeds correctly', () => {
+    const state = advanceToMainPhaseWithDrawnCard()
+    const player = state.players['player-1']
+
+    const result = payCost(player, 2)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
       return
     }
 
-    expect(advanceResult.state.log).toHaveLength(2)
-    expect(advanceResult.state.log[0].actionType).toBe(ActionType.StartGame)
-    expect(advanceResult.state.log[1].actionType).toBe(ActionType.AdvancePhase)
+    expect(result.player.activeDon).toBe(0)
+    expect(result.player.restedDon).toBe(2)
+    expect(result.player.totalDonInPlay).toBe(2)
+  })
+
+  it('cost payment helper fails correctly', () => {
+    const state = advanceToMainPhaseWithDrawnCard()
+    const player = state.players['player-1']
+
+    const result = payCost(player, 3)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.code).toBe(GameErrorCode.InsufficientDon)
+    }
   })
 })

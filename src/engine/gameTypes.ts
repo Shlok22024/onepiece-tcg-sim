@@ -22,15 +22,27 @@ export enum Zone {
 }
 
 export interface CardInstance {
-  readonly id: CardInstanceId
+  readonly instanceId: CardInstanceId
   readonly cardId: CardId
   readonly ownerId: PlayerId
   readonly controllerId: PlayerId
   readonly zone: Zone
   readonly isRested: boolean
+  readonly attachedDonCount: number
 }
 
-export type PlayerZones = Record<Zone, readonly CardInstanceId[]>
+export interface PlayerZones {
+  readonly [Zone.Leader]: readonly CardInstanceId[]
+  readonly [Zone.Deck]: readonly CardInstanceId[]
+  readonly [Zone.Hand]: readonly CardInstanceId[]
+  readonly [Zone.Life]: readonly CardInstanceId[]
+  readonly [Zone.Trash]: readonly CardInstanceId[]
+  readonly [Zone.CharacterArea]: readonly CardInstanceId[]
+  readonly [Zone.StageArea]: readonly CardInstanceId[]
+  readonly [Zone.DonDeck]: readonly CardInstanceId[]
+  readonly [Zone.DonActive]: readonly CardInstanceId[]
+  readonly [Zone.DonRested]: readonly CardInstanceId[]
+}
 
 export interface PlayerState {
   readonly id: PlayerId
