@@ -1,13 +1,14 @@
 # OPTCG Single Player Practice Simulator
 
-Offline practice simulator foundation for a personal One Piece TCG project. The repository now includes a stricter TypeScript data model, a first non-UI engine contract, and a deck parser and validation pipeline built on placeholder local card data.
+Offline practice simulator foundation for a personal One Piece TCG project. The repository now includes a stricter TypeScript data model, a phase-based non-UI engine contract, and a deck parser and validation pipeline built on placeholder local card data.
 
 ## Current Status
 
 - React + TypeScript + Vite project setup is in place, but React gameplay UI is intentionally out of scope for this milestone.
 - `GameState` is the engine source of truth and must only change through engine actions.
-- A minimal immutable engine contract exists for `START_GAME`, `DRAW_CARD`, and `END_TURN`.
+- The engine now supports `START_GAME`, `ADVANCE_PHASE`, `DRAW_CARD`, and `END_TURN` with phase-aware legality checks.
 - Decklists can now be parsed, validated, and converted into clean `Deck` objects before they reach the engine.
+- The turn loop currently uses explicit phases and placeholder DON behavior to prepare for future combat and AI work.
 - Vitest covers engine behavior plus deck parsing and validation rules.
 - Card effects, combat, AI gameplay behavior, external card APIs, and real card database integration are still intentionally out of scope.
 
@@ -32,6 +33,14 @@ Offline practice simulator foundation for a personal One Piece TCG project. The 
 - UI code must call engine actions and consume `ActionResult` values instead of mutating `GameState` directly.
 - AI must use the same legal `GameAction` and `ActionResult` system as the human player.
 - Card definitions are separate from card instances so future rules can safely manipulate board state.
+- Current phase order is:
+  first turn starts in `DRAW`
+  later turns start in `REFRESH`
+  then proceed `REFRESH -> DRAW -> DON -> MAIN -> END`
+- `END_TURN` currently switches players only from `MAIN` or `END`.
+- Entering `DON` grants up to 2 DON from the DON deck, capped at 10 DON in play.
+- Entering `REFRESH` readies rested DON.
+- Character unrest, DON attachment, cost payment, combat, and card effects are not implemented yet.
 
 ## Deck Input Notes
 
@@ -66,4 +75,4 @@ Additional planning and milestone notes live in:
 
 ## Next Recommended Step
 
-Add the next engine-facing deck milestone: connect validated deck objects into match setup so `START_GAME` can consume built decks from the parser pipeline instead of inline test fixtures.
+Connect validated deck objects into match setup so `START_GAME` consumes built decks from the parser pipeline, then add the first legal-action layer for card play and combat placeholders on top of the phase engine.

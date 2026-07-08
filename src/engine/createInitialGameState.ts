@@ -22,6 +22,7 @@ export function createInitialGameState(
       activePlayerId: null,
       activePlayerIndex: null,
       turnNumber: 0,
+      hasPerformedNormalDraw: false,
     },
     log: [],
     createdAt: now,

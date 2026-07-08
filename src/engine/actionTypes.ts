@@ -4,6 +4,7 @@ import type { GameLogEntry, GameState, PlayerId } from './gameTypes.ts'
 
 export enum ActionType {
   StartGame = 'START_GAME',
+  AdvancePhase = 'ADVANCE_PHASE',
   DrawCard = 'DRAW_CARD',
   EndTurn = 'END_TURN',
   PlayCard = 'PLAY_CARD',
@@ -32,8 +33,16 @@ export interface StartGameAction extends BaseGameAction {
   }
 }
 
+export interface AdvancePhaseAction extends BaseGameAction {
+  readonly type: ActionType.AdvancePhase
+}
+
 export interface DrawCardAction extends BaseGameAction {
   readonly type: ActionType.DrawCard
+  readonly payload?: {
+    readonly internal?: boolean
+    readonly targetPlayerId?: PlayerId
+  }
 }
 
 export interface EndTurnAction extends BaseGameAction {
@@ -43,13 +52,17 @@ export interface EndTurnAction extends BaseGameAction {
 export interface UnsupportedGameAction extends BaseGameAction {
   readonly type: Exclude<
     ActionType,
-    ActionType.StartGame | ActionType.DrawCard | ActionType.EndTurn
+    | ActionType.StartGame
+    | ActionType.AdvancePhase
+    | ActionType.DrawCard
+    | ActionType.EndTurn
   >
   readonly payload?: Readonly<Record<string, unknown>>
 }
 
 export type GameAction =
   | StartGameAction
+  | AdvancePhaseAction
   | DrawCardAction
   | EndTurnAction
   | UnsupportedGameAction

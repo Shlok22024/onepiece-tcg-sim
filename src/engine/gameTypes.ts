@@ -39,12 +39,17 @@ export interface PlayerState {
   readonly deckDefinition: Deck
   readonly leaderCardInstanceId: CardInstanceId
   readonly zones: PlayerZones
+  readonly donDeckCount: number
+  readonly activeDon: number
+  readonly restedDon: number
+  readonly totalDonInPlay: number
 }
 
 export interface TurnState {
   readonly activePlayerId: PlayerId | null
   readonly activePlayerIndex: number | null
   readonly turnNumber: number
+  readonly hasPerformedNormalDraw: boolean
 }
 
 export interface GameLogEntry {
