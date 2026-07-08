@@ -1,13 +1,14 @@
 # OPTCG Single Player Practice Simulator
 
-Offline practice simulator foundation for a personal One Piece TCG project. This repository currently contains the initial frontend scaffold, placeholder documentation, and TypeScript-first architecture for a future human-vs-AI rules engine.
+Offline practice simulator foundation for a personal One Piece TCG project. The repository now includes a stricter TypeScript data model and a first non-UI engine contract for future human-versus-AI play.
 
 ## Current Status
 
-- React + TypeScript + Vite frontend scaffold is in place.
-- Game engine, card, deck, and AI concerns are separated from the UI layer.
-- Vitest is configured with a placeholder test.
-- No gameplay logic, deck parsing, AI behavior, card effects, or external data integration has been implemented yet.
+- React + TypeScript + Vite project setup is in place, but React gameplay UI is intentionally out of scope for this milestone.
+- `GameState` is the engine source of truth and must only change through engine actions.
+- A minimal immutable engine contract exists for `START_GAME`, `DRAW_CARD`, and `END_TURN`.
+- Vitest covers initial state creation, successful action flow, and clean failure results.
+- Card effects, combat, deck parsing, AI gameplay behavior, and external card APIs are still intentionally out of scope.
 
 ## Tech Stack
 
@@ -22,8 +23,14 @@ Offline practice simulator foundation for a personal One Piece TCG project. This
 - `npm install` installs dependencies.
 - `npm run dev` starts the Vite development server.
 - `npm run build` performs a TypeScript build check and production bundle.
-- `npm run test` runs the placeholder Vitest suite.
+- `npm run test` runs the Vitest suite.
 - `npm run lint` runs Oxlint.
+
+## Engine Notes
+
+- UI code must call engine actions and consume `ActionResult` values instead of mutating `GameState` directly.
+- AI must use the same legal `GameAction` and `ActionResult` system as the human player.
+- Card definitions are separate from card instances so future rules can safely manipulate board state.
 
 ## Project Layout
 
@@ -40,7 +47,7 @@ tests/
 docs/
 ```
 
-Additional project planning lives in the root specification files:
+Additional planning and milestone notes live in:
 
 - `GAME_ENGINE_SPEC.md`
 - `CARD_DATA_SPEC.md`
@@ -51,4 +58,4 @@ Additional project planning lives in the root specification files:
 
 ## Next Recommended Step
 
-Implement a minimal non-UI game loop contract next: define turn setup helpers, zone transitions, and a narrow action dispatcher that can process a handful of rule-safe placeholder actions without card effects.
+Add the first rule-validation layer around the engine contract: setup constraints, basic phase restrictions, and a small set of legal-action builders that both the human flow and future AI can share.

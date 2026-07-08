@@ -1,15 +1,19 @@
+import type { CardId } from '../cards/cardTypes.ts'
+
+export type DeckId = string
+
+export type DeckSource = 'LOCAL_PLACEHOLDER' | 'USER_CREATED'
+
 export interface DeckCardEntry {
-  cardCode: string
-  quantity: number
-  isLeader?: boolean
-  isDonCard?: boolean
+  readonly cardId: CardId
+  readonly quantity: number
 }
 
 export interface Deck {
-  id: string
-  name: string
-  leaderCardCode: string
-  mainDeck: DeckCardEntry[]
-  notes?: string
-  source: 'LOCAL_PLACEHOLDER' | 'USER_CREATED'
+  readonly id: DeckId
+  readonly name: string
+  readonly leaderCardId: CardId
+  readonly mainDeck: readonly DeckCardEntry[]
+  readonly notes?: string
+  readonly source: DeckSource
 }

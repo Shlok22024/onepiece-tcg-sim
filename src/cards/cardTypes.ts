@@ -1,3 +1,5 @@
+export type CardId = string
+
 export enum CardType {
   Leader = 'LEADER',
   Character = 'CHARACTER',
@@ -26,18 +28,18 @@ export enum CardRarity {
 }
 
 export interface Card {
-  id: string
-  code: string
-  name: string
-  type: CardType
-  colors: CardColor[]
-  rarity: CardRarity
-  cost?: number
-  power?: number
-  counter?: number
-  life?: number
-  attribute?: string
-  text?: string
-  tags: string[]
-  isPlaceholder?: boolean
+  readonly id: CardId
+  readonly code: string
+  readonly name: string
+  readonly type: CardType
+  readonly colors: readonly CardColor[]
+  readonly rarity: CardRarity
+  readonly cost?: number
+  readonly power?: number
+  readonly counter?: number
+  readonly life?: number
+  readonly attribute?: string
+  readonly text?: string
+  readonly tags: readonly string[]
+  readonly isPlaceholder: boolean
 }

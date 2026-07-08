@@ -1,20 +1,21 @@
 import type { GameAction } from '../engine/actionTypes.ts'
+import type { PlayerId } from '../engine/gameTypes.ts'
 
 export enum AIDifficulty {
   Medium = 'MEDIUM',
 }
 
 export interface AIPlayer {
-  id: string
-  displayName: string
-  controlledPlayerId: string
-  difficulty: AIDifficulty
-  notes?: string
+  readonly id: string
+  readonly displayName: string
+  readonly controlledPlayerId: PlayerId
+  readonly difficulty: AIDifficulty
+  readonly notes?: string
 }
 
 export interface AIDecision {
-  chosenAction: GameAction | null
-  confidence: number
-  summary: string
-  consideredActionTypes: string[]
+  readonly chosenAction: GameAction | null
+  readonly consideredActions: readonly GameAction[]
+  readonly confidence: number
+  readonly summary: string
 }

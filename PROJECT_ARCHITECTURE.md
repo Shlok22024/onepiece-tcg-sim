@@ -6,52 +6,57 @@ Define the high-level boundaries for an offline, single-player One Piece TCG pra
 
 ## Current Scope
 
-- Frontend-only application with no backend, database, or desktop wrapper.
-- Clear separation between engine state, action contracts, card data definitions, AI planning, storage, and UI rendering.
-- TypeScript type modules establish shared language before gameplay logic is introduced.
-- Root documentation captures the initial direction and guardrails for later implementation.
+- Shared TypeScript models now distinguish static card definitions from mutable in-game card instances.
+- `GameState` is the authoritative source of truth for engine-owned state.
+- Engine transitions are performed through immutable action handlers rather than direct object mutation.
+- The initial engine milestone is intentionally non-UI and limited to `START_GAME`, `DRAW_CARD`, and `END_TURN`.
 
 ### Proposed Layering
 
 ```text
 React UI
-  -> UI view models and presentation helpers
-  -> Engine and rules services
-  -> Card, deck, and action data contracts
-  -> Local persistence adapters
+  -> dispatches legal engine actions
+  -> consumes ActionResult and GameState snapshots
+Engine and rules services
+  -> own GameState, action validation, and immutable state transitions
+Card and deck models
+  -> define static source data used to create game instances
+Storage adapters
+  -> persist or restore engine snapshots later
 ```
 
 ### Folder Responsibilities
 
 ```text
-src/ai        AI contracts and future decision policies
-src/cards     Card data models and placeholder sample data
-src/deck      Deck definitions and validation-facing types
-src/engine    Game state, phases, actions, and orchestration contracts
-src/rules     Rule resolution modules and validators
-src/storage   Local persistence and save/load adapters
-src/ui        React components and UI-only composition
-tests         Vitest coverage for engine, rules, and utilities
+src/ai        AI contracts that must use the same legal GameAction and ActionResult flow as human play
+src/cards     Static card definitions and placeholder sample data shapes
+src/deck      Deck definitions and future validation-facing types
+src/engine    Source-of-truth game state, actions, logs, errors, and transition helpers
+src/rules     Future rule resolution modules layered on top of the engine contract
+src/storage   Future local persistence and replay adapters
+src/ui        React components that render state and dispatch actions, but never mutate engine state directly
+tests         Vitest coverage for engine behavior and future rule modules
 docs          Supplemental notes, diagrams, or ADRs
 ```
 
 ## Explicitly Out Of Scope
 
-- Full gameplay implementation.
-- Real card database ingestion.
-- Card effect scripting.
-- Matchmaking, online play, accounts, or telemetry.
-- Desktop packaging and installer concerns.
+- Card effects and scripting.
+- Combat resolution.
+- External card API integration.
+- Deck importing or parsing workflows.
+- AI gameplay behavior.
+- Desktop packaging.
 
 ## Future Expansion Notes
 
-- Introduce application services that coordinate engine and storage without leaking logic into components.
-- Add feature-based test groupings once engine modules exist.
-- Consider dedicated folders for selectors, reducers, and sample fixtures when state handling becomes more complex.
-- Add import boundaries or path aliases later if the module graph grows enough to justify them.
+- Add application services between UI and engine once match setup and save-state flows exist.
+- Add selectors or derived view-model utilities so the UI consumes stable read-only shapes.
+- Introduce stricter module boundaries if the engine grows into multiple rule packages.
+- Expand AI modules to evaluate and select only legal engine actions instead of special-casing separate AI pathways.
 
 ## Open Questions
 
-- Should the engine eventually use immutable snapshots, command handlers, or a reducer-style state transition model?
-- Should saved practice states live as JSON snapshots, replay logs, or both?
-- How much AI decision explanation should be exposed to the UI for training-oriented practice modes?
+- Should future rule expansion remain reducer-like, or split into command handlers per action type?
+- Will save states be full `GameState` snapshots, action logs, or both?
+- How much engine metadata should eventually be exposed for coaching-style AI explanations?

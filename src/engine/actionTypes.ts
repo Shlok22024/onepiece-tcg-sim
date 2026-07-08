@@ -1,21 +1,73 @@
+import type { Deck } from '../deck/deckTypes.ts'
+import type { GameError } from './gameErrors.ts'
+import type { GameLogEntry, GameState, PlayerId } from './gameTypes.ts'
+
 export enum ActionType {
   StartGame = 'START_GAME',
-  Mulligan = 'MULLIGAN',
   DrawCard = 'DRAW_CARD',
-  AttachDon = 'ATTACH_DON',
-  PlayCard = 'PLAY_CARD',
-  ActivateEffect = 'ACTIVATE_EFFECT',
-  Attack = 'ATTACK',
   EndTurn = 'END_TURN',
-  PassPriority = 'PASS_PRIORITY',
+  PlayCard = 'PLAY_CARD',
+  Attack = 'ATTACK',
+  ActivateEffect = 'ACTIVATE_EFFECT',
 }
 
-export interface GameAction {
-  id: string
-  type: ActionType
-  playerId: string
-  sourceCardId?: string
-  targetCardIds?: string[]
-  payload?: Record<string, unknown>
-  createdAt: number
+export interface BaseGameAction {
+  readonly id: string
+  readonly type: ActionType
+  readonly playerId: PlayerId
+  readonly createdAt: number
 }
+
+export interface StartGamePlayerConfig {
+  readonly id: PlayerId
+  readonly displayName: string
+  readonly isHuman: boolean
+  readonly deck: Deck
+}
+
+export interface StartGameAction extends BaseGameAction {
+  readonly type: ActionType.StartGame
+  readonly payload: {
+    readonly players: readonly [StartGamePlayerConfig, StartGamePlayerConfig]
+  }
+}
+
+export interface DrawCardAction extends BaseGameAction {
+  readonly type: ActionType.DrawCard
+}
+
+export interface EndTurnAction extends BaseGameAction {
+  readonly type: ActionType.EndTurn
+}
+
+export interface UnsupportedGameAction extends BaseGameAction {
+  readonly type: Exclude<
+    ActionType,
+    ActionType.StartGame | ActionType.DrawCard | ActionType.EndTurn
+  >
+  readonly payload?: Readonly<Record<string, unknown>>
+}
+
+export type GameAction =
+  | StartGameAction
+  | DrawCardAction
+  | EndTurnAction
+  | UnsupportedGameAction
+
+export interface SuccessfulActionResult {
+  readonly ok: true
+  readonly action: GameAction
+  readonly state: GameState
+  readonly logEntry: GameLogEntry
+  readonly error?: undefined
+}
+
+export interface FailedActionResult {
+  readonly ok: false
+  readonly action: GameAction
+  readonly state: GameState
+  readonly error: GameError
+  readonly logEntry?: undefined
+}
+
+export type ActionResult = SuccessfulActionResult | FailedActionResult
