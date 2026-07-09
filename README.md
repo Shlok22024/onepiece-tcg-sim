@@ -1,10 +1,10 @@
 # OPTCG Single Player Practice Simulator
 
-Offline practice simulator foundation for a personal One Piece TCG project. The repository now includes a stricter TypeScript data model, a phase-based non-UI engine contract, a read-only selector layer, centralized legal action generation, basic Character card play with DON cost payment, a structured battle flow with a placeholder counter window, and a deck parser and validation pipeline built on placeholder local card data.
+Offline practice simulator foundation for a personal One Piece TCG project. The repository now includes a stricter TypeScript data model, a phase-based non-UI engine contract, a read-only selector layer, centralized legal action generation, a debug gameplay UI for manual engine testing, basic Character card play with DON cost payment, a structured battle flow with a placeholder counter window, and a deck parser and validation pipeline built on placeholder local card data.
 
 ## Current Status
 
-- React + TypeScript + Vite project setup is in place, but React gameplay UI is intentionally out of scope for this milestone.
+- React + TypeScript + Vite project setup is in place, and the app now opens a debug-only gameplay UI for manual engine validation.
 - `GameState` is the engine source of truth and must only change through engine actions.
 - The engine now supports `START_GAME`, `ADVANCE_PHASE`, `DRAW_CARD`, `PLAY_CARD`, `DECLARE_ATTACK`, `PASS_COUNTER`, `RESOLVE_ATTACK`, and `END_TURN` with phase-aware legality checks.
 - The engine now exposes pure selectors plus `getLegalActions(state, playerId)` so future UI and AI layers can inspect state and discover legal moves without duplicating rule logic.
@@ -26,7 +26,7 @@ Offline practice simulator foundation for a personal One Piece TCG project. The 
 ## Scripts
 
 - `npm install` installs dependencies.
-- `npm run dev` starts the Vite development server.
+- `npm run dev` starts the Vite development server and opens the debug gameplay UI.
 - `npm run build` performs a TypeScript build check and production bundle.
 - `npm run test` runs the Vitest suite.
 - `npm run lint` runs Oxlint.
@@ -37,6 +37,7 @@ Offline practice simulator foundation for a personal One Piece TCG project. The 
 - UI should use selectors and `getLegalActions` instead of scattering raw state traversal and legality checks across components.
 - AI must use the same legal `GameAction` and `ActionResult` system as the human player, and it should discover candidate moves through `getLegalActions`.
 - `applyAction` remains the final rule authority even when selectors and legal action helpers are available.
+- The current React UI is a debug harness, not the final production match interface.
 - Card definitions are separate from card instances so future rules can safely manipulate board state.
 - `GameState.battle` is now the source of truth for any unresolved attack and prevents phase changes or turn ending until the battle is resolved.
 - Current phase order is:
@@ -66,7 +67,15 @@ Offline practice simulator foundation for a personal One Piece TCG project. The 
   `PASS_COUNTER`
   `RESOLVE_ATTACK`
 - `START_GAME` is intentionally left out of normal legal action generation because it belongs to match setup rather than live turn flow.
-- Counter cards, blockers, keywords, card effects, Stage/Event play, React gameplay UI, and AI behavior are still not implemented yet.
+- The debug UI uses plain text rendering only and includes no copyrighted card images or official logos.
+- Counter cards, blockers, keywords, card effects, Stage/Event play, polished production UI, and AI behavior are still not implemented yet.
+
+## Debug UI Notes
+
+- Use the `Start Debug Game` button to seed a placeholder mirror match from local sample card data.
+- The action panel renders buttons from `getLegalActions` for each player, while `applyAction` still validates every action before state changes.
+- The current surface is intentionally limited: it is meant for engine verification, not polished gameplay presentation.
+- Both players currently use the same validated placeholder red practice deck because the local sample card pool is still intentionally small.
 
 ## Deck Input Notes
 
@@ -101,4 +110,4 @@ Additional planning and milestone notes live in:
 
 ## Next Recommended Step
 
-Implement real counter-card play on top of the new battle state and legal action generator so the defending player can choose eligible hand counters during the counter window before moving on to blockers, triggers, and richer combat timing.
+Implement real counter-card play on top of the new battle state, legal action generator, and debug UI so the defending player can choose eligible hand counters during the counter window before moving on to blockers, triggers, and richer combat timing.

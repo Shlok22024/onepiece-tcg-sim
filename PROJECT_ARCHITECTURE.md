@@ -12,13 +12,14 @@ Define the high-level boundaries for an offline, single-player One Piece TCG pra
 - The engine now owns a simple turn loop with explicit phases, phase advancement, placeholder DON handling, phase-aware action legality, basic Character card play, a structured battle flow with a placeholder counter window, and a centralized legal-action discovery layer.
 - Deck input now flows through a dedicated parser, validator, and builder pipeline before entering the engine.
 - Read-only selectors now sit beside the engine so UI and AI can inspect `GameState` safely without scattering raw state traversal everywhere.
+- A debug-only React gameplay surface now sits on top of selectors, `getLegalActions`, and `applyAction` so the current loop can be exercised manually without embedding rules in components.
 
 ### Proposed Layering
 
 ```text
 React UI
   -> uses selectors and getLegalActions for safe reads and interaction wiring
-  -> dispatches legal engine actions
+  -> dispatches legal engine actions through applyAction
   -> consumes ActionResult and GameState snapshots
 Engine and rules services
   -> own GameState, selectors, legal action generation, phase validation, DON placeholders, cost payment, battle state, combat resolution, and immutable state transitions
@@ -38,7 +39,7 @@ src/deck      Deck definitions, parser, validator, and deck construction helpers
 src/engine    Source-of-truth game state, selectors, legal action generation, phase flow, actions, combat and cost helpers, logs, errors, and transition helpers
 src/rules     Future rule resolution modules layered on top of the engine contract
 src/storage   Future local persistence and replay adapters
-src/ui        React components that consume selectors and legal actions, then dispatch actions, but never mutate engine state directly
+src/ui        React debug components that consume selectors and legal actions, then dispatch actions, but never mutate engine state directly
 tests         Vitest coverage for engine behavior and future rule modules
 docs          Supplemental notes, diagrams, or ADRs
 ```
@@ -62,6 +63,7 @@ docs          Supplemental notes, diagrams, or ADRs
 - Continue layering board rules into the same action system so future combat and AI logic can reason over legal board-development actions instead of UI-specific shortcuts.
 - Extend the new battle-state contract with real counter cards, blockers, triggers, and effects without changing the public action/result contract that the UI and AI will consume.
 - Keep `applyAction` as the final engine authority even as selectors and legal-action helpers become richer, so convenience layers never replace validation.
+- Replace the debug UI with a more polished match interface later without changing the engine contract underneath it.
 
 ## Open Questions
 

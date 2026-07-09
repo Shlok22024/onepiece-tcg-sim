@@ -1,8 +1,8 @@
 import './App.css'
-import { ProjectShell } from './ui/ProjectShell.tsx'
+import { DebugGame } from './ui/DebugGame.tsx'
 
 function App() {
-  return <ProjectShell />
+  return <DebugGame />
 }
 
 export default App
