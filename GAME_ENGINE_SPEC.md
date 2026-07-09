@@ -11,6 +11,8 @@ Define the current non-UI game engine contract for an offline single-player simu
 - The engine currently supports eight immutable actions in the active flow: `START_GAME`, `ADVANCE_PHASE`, `DRAW_CARD`, `PLAY_CARD`, `DECLARE_ATTACK`, `PASS_COUNTER`, `RESOLVE_ATTACK`, and `END_TURN`.
 - Every engine action returns an `ActionResult` so callers receive either the next valid state or a structured failure.
 - Successful actions append a `GameLogEntry` to the authoritative game state.
+- A read-only selector layer now exposes safe engine queries such as active player lookups, zone inspection, battle inspection, and card-definition resolution without mutating state.
+- `getLegalActions(state, playerId)` now centralizes currently legal high-level action discovery for UI and AI consumers, while `applyAction` remains the final rule authority.
 - Card instances now track `instanceId`, `zone`, `rested` status, and `attachedDonCount`, while card definitions remain immutable source data.
 - Battle state is now explicit and tracks attacker, defender, target type, turn number, current battle step, placeholder counter power, and whether the defender still has a counter response window.
 - Phase sequence is currently:
@@ -44,6 +46,15 @@ Define the current non-UI game engine contract for an offline single-player simu
   `counterPowerAdded` exists as a placeholder field but stays at `0` in this milestone
   leader damage removes one life card to hand
   attacking a leader at zero life ends the game
+- Legal action generation currently covers:
+  `DRAW_CARD`
+  `ADVANCE_PHASE`
+  `END_TURN`
+  `PLAY_CARD`
+  `DECLARE_ATTACK`
+  `PASS_COUNTER`
+  `RESOLVE_ATTACK`
+- `START_GAME` is intentionally not part of normal legal-action generation because it is a match setup concern rather than an in-progress turn action.
 - KO handling currently moves defeated Characters from `CHARACTER_AREA` to `TRASH` and records a combat log entry.
 - Game over state now records `gameOver`, `winnerId`, `loserId`, and `endReason`.
 
@@ -58,10 +69,12 @@ Define the current non-UI game engine contract for an offline single-player simu
 - External card APIs.
 - Desktop packaging.
 - AI combat decision making.
+- Hidden-information filtering for separate human and AI views.
 
 ## Future Expansion Notes
 
 - Add legality validation for more action types while keeping the same `GameAction` and `ActionResult` contract for both human and AI players.
+- Expand selectors into richer filtered views once hidden-information rules and UI read models become necessary.
 - Expand phase handling beyond the current placeholder flow once more rules are implemented.
 - Replace count-only DON tracking with card-level DON state once attachment and payment rules exist.
 - Extend `PLAY_CARD` into full board development rules such as stage play, event resolution, and future board-size constraints.
@@ -73,5 +86,6 @@ Define the current non-UI game engine contract for an offline single-player simu
 ## Open Questions
 
 - Should later rule modules sit behind one central dispatcher or phase-specific action handlers?
+- How much action metadata should eventually live beside `GameAction` versus being derived from selectors for UI display?
 - When card effects arrive, should they produce chained `ActionResult` objects or separate effect resolution events?
 - How much initial game setup should be baked into `START_GAME` versus separate setup actions?

@@ -1,12 +1,13 @@
 # OPTCG Single Player Practice Simulator
 
-Offline practice simulator foundation for a personal One Piece TCG project. The repository now includes a stricter TypeScript data model, a phase-based non-UI engine contract, basic Character card play with DON cost payment, a structured battle flow with a placeholder counter window, and a deck parser and validation pipeline built on placeholder local card data.
+Offline practice simulator foundation for a personal One Piece TCG project. The repository now includes a stricter TypeScript data model, a phase-based non-UI engine contract, a read-only selector layer, centralized legal action generation, basic Character card play with DON cost payment, a structured battle flow with a placeholder counter window, and a deck parser and validation pipeline built on placeholder local card data.
 
 ## Current Status
 
 - React + TypeScript + Vite project setup is in place, but React gameplay UI is intentionally out of scope for this milestone.
 - `GameState` is the engine source of truth and must only change through engine actions.
 - The engine now supports `START_GAME`, `ADVANCE_PHASE`, `DRAW_CARD`, `PLAY_CARD`, `DECLARE_ATTACK`, `PASS_COUNTER`, `RESOLVE_ATTACK`, and `END_TURN` with phase-aware legality checks.
+- The engine now exposes pure selectors plus `getLegalActions(state, playerId)` so future UI and AI layers can inspect state and discover legal moves without duplicating rule logic.
 - Decklists can now be parsed, validated, and converted into clean `Deck` objects before they reach the engine.
 - The turn loop currently uses explicit phases and placeholder DON behavior to prepare for future combat and AI work.
 - Basic board development is now possible through Character card play from hand during `MAIN`.
@@ -33,7 +34,9 @@ Offline practice simulator foundation for a personal One Piece TCG project. The 
 ## Engine Notes
 
 - UI code must call engine actions and consume `ActionResult` values instead of mutating `GameState` directly.
-- AI must use the same legal `GameAction` and `ActionResult` system as the human player.
+- UI should use selectors and `getLegalActions` instead of scattering raw state traversal and legality checks across components.
+- AI must use the same legal `GameAction` and `ActionResult` system as the human player, and it should discover candidate moves through `getLegalActions`.
+- `applyAction` remains the final rule authority even when selectors and legal action helpers are available.
 - Card definitions are separate from card instances so future rules can safely manipulate board state.
 - `GameState.battle` is now the source of truth for any unresolved attack and prevents phase changes or turn ending until the battle is resolved.
 - Current phase order is:
@@ -54,6 +57,15 @@ Offline practice simulator foundation for a personal One Piece TCG project. The 
   `counterPowerAdded` is present in battle state but remains a placeholder set to `0`
   leader damage moves one life card to hand
   attacking a leader at zero life ends the game
+- `getLegalActions` currently generates in-progress actions for:
+  `DRAW_CARD`
+  `ADVANCE_PHASE`
+  `END_TURN`
+  `PLAY_CARD`
+  `DECLARE_ATTACK`
+  `PASS_COUNTER`
+  `RESOLVE_ATTACK`
+- `START_GAME` is intentionally left out of normal legal action generation because it belongs to match setup rather than live turn flow.
 - Counter cards, blockers, keywords, card effects, Stage/Event play, React gameplay UI, and AI behavior are still not implemented yet.
 
 ## Deck Input Notes
@@ -89,4 +101,4 @@ Additional planning and milestone notes live in:
 
 ## Next Recommended Step
 
-Implement real counter-card play on top of the new battle state so the defending player can spend hand counters during the counter window before moving on to blockers, triggers, and richer combat timing.
+Implement real counter-card play on top of the new battle state and legal action generator so the defending player can choose eligible hand counters during the counter window before moving on to blockers, triggers, and richer combat timing.

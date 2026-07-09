@@ -9,6 +9,7 @@ Outline the boundaries for the initial computer opponent so AI planning can evol
 - Model a single medium-difficulty AI opponent as the first planned target.
 - Define basic AI identity and decision result contracts.
 - Keep AI inputs and outputs centered on engine state and game actions.
+- Require AI to inspect state through engine selectors and discover candidate moves through `getLegalActions` instead of inventing moves ad hoc.
 
 ## Explicitly Out Of Scope
 
@@ -19,6 +20,7 @@ Outline the boundaries for the initial computer opponent so AI planning can evol
 
 ## Future Expansion Notes
 
+- Build AI planning on top of selectors plus `getLegalActions` before adding any bespoke evaluation logic.
 - Add evaluation layers for board state, resource efficiency, and combat pressure.
 - Introduce difficulty presets that change planning depth or risk tolerance.
 - Provide optional explanation text so the simulator can double as a practice coaching tool.
@@ -27,5 +29,6 @@ Outline the boundaries for the initial computer opponent so AI planning can evol
 ## Open Questions
 
 - Should early AI act through the same action queue as the human player or through helper shortcuts?
+- How much selector-level hidden-information filtering will AI need once imperfect-information play matters?
 - How much hidden-information simulation should the AI be allowed to perform?
 - Will medium difficulty be defined by tactical competence, reduced search depth, or intentionally imperfect heuristics?

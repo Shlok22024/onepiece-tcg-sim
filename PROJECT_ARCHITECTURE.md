@@ -9,17 +9,19 @@ Define the high-level boundaries for an offline, single-player One Piece TCG pra
 - Shared TypeScript models now distinguish static card definitions from mutable in-game card instances.
 - `GameState` is the authoritative source of truth for engine-owned state.
 - Engine transitions are performed through immutable action handlers rather than direct object mutation.
-- The engine now owns a simple turn loop with explicit phases, phase advancement, placeholder DON handling, phase-aware action legality, basic Character card play, and a structured battle flow with a placeholder counter window.
+- The engine now owns a simple turn loop with explicit phases, phase advancement, placeholder DON handling, phase-aware action legality, basic Character card play, a structured battle flow with a placeholder counter window, and a centralized legal-action discovery layer.
 - Deck input now flows through a dedicated parser, validator, and builder pipeline before entering the engine.
+- Read-only selectors now sit beside the engine so UI and AI can inspect `GameState` safely without scattering raw state traversal everywhere.
 
 ### Proposed Layering
 
 ```text
 React UI
+  -> uses selectors and getLegalActions for safe reads and interaction wiring
   -> dispatches legal engine actions
   -> consumes ActionResult and GameState snapshots
 Engine and rules services
-  -> own GameState, phase validation, DON placeholders, cost payment, battle state, combat resolution, and immutable state transitions
+  -> own GameState, selectors, legal action generation, phase validation, DON placeholders, cost payment, battle state, combat resolution, and immutable state transitions
 Card and deck models
   -> define static source data used to create game instances
   -> parse and validate raw decklists into clean Deck objects
@@ -30,13 +32,13 @@ Storage adapters
 ### Folder Responsibilities
 
 ```text
-src/ai        AI contracts that must use the same legal GameAction, battle timing, and ActionResult flow as human play
+src/ai        AI contracts that must use the same legal GameAction, selectors, getLegalActions, battle timing, and ActionResult flow as human play
 src/cards     Static card definitions and placeholder sample card data
 src/deck      Deck definitions, parser, validator, and deck construction helpers
-src/engine    Source-of-truth game state, phase flow, actions, combat and cost helpers, logs, errors, and transition helpers
+src/engine    Source-of-truth game state, selectors, legal action generation, phase flow, actions, combat and cost helpers, logs, errors, and transition helpers
 src/rules     Future rule resolution modules layered on top of the engine contract
 src/storage   Future local persistence and replay adapters
-src/ui        React components that render state and dispatch actions, but never mutate engine state directly
+src/ui        React components that consume selectors and legal actions, then dispatch actions, but never mutate engine state directly
 tests         Vitest coverage for engine behavior and future rule modules
 docs          Supplemental notes, diagrams, or ADRs
 ```
@@ -52,13 +54,14 @@ docs          Supplemental notes, diagrams, or ADRs
 ## Future Expansion Notes
 
 - Add application services between UI and engine once match setup and save-state flows exist.
-- Add selectors or derived view-model utilities so the UI consumes stable read-only shapes.
+- Grow selectors or derived view-model utilities so the UI consumes stable read-only shapes without reading raw engine structures directly.
 - Introduce stricter module boundaries if the engine grows into multiple rule packages.
 - Expand AI modules to evaluate and select only legal engine actions instead of special-casing separate AI pathways.
 - Replace placeholder card data with a richer local card source before attempting real competitive deck support.
 - Build combat, card play, and AI planning on top of the explicit phase engine instead of bypassing it.
 - Continue layering board rules into the same action system so future combat and AI logic can reason over legal board-development actions instead of UI-specific shortcuts.
 - Extend the new battle-state contract with real counter cards, blockers, triggers, and effects without changing the public action/result contract that the UI and AI will consume.
+- Keep `applyAction` as the final engine authority even as selectors and legal-action helpers become richer, so convenience layers never replace validation.
 
 ## Open Questions
 
