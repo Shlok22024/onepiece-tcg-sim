@@ -13,6 +13,7 @@ Define the current non-UI game engine contract for an offline single-player simu
 - Successful actions append a `GameLogEntry` to the authoritative game state.
 - A read-only selector layer now exposes safe engine queries such as active player lookups, zone inspection, battle inspection, and card-definition resolution without mutating state.
 - `getLegalActions(state, playerId)` now centralizes currently legal high-level action discovery for UI and AI consumers, while `applyAction` remains the final rule authority.
+- Medium AI v1 now consumes the exact same selector, legal-action, and `ActionResult` contract as the human player.
 - Card instances now track `instanceId`, `zone`, `rested` status, and `attachedDonCount`, while card definitions remain immutable source data.
 - Battle state is now explicit and tracks attacker, defender, target type, turn number, current battle step, placeholder counter power, and whether the defender still has a counter response window.
 - Phase sequence is currently:
@@ -57,6 +58,10 @@ Define the current non-UI game engine contract for an offline single-player simu
 - `START_GAME` is intentionally not part of normal legal-action generation because it is a match setup concern rather than an in-progress turn action.
 - KO handling currently moves defeated Characters from `CHARACTER_AREA` to `TRASH` and records a combat log entry.
 - Game over state now records `gameOver`, `winnerId`, `loserId`, and `endReason`.
+- Medium AI v1 intentionally does not add any engine-only shortcut actions:
+  it must choose from `getLegalActions`
+  it must execute through `applyAction`
+  it must stop when control leaves its legal action window, the game ends, or a safety step guard is hit
 
 ## Explicitly Out Of Scope
 
@@ -68,7 +73,7 @@ Define the current non-UI game engine contract for an offline single-player simu
 - React gameplay UI.
 - External card APIs.
 - Desktop packaging.
-- AI combat decision making.
+- Machine learning or search-heavy AI systems.
 - Hidden-information filtering for separate human and AI views.
 
 ## Future Expansion Notes
@@ -82,6 +87,7 @@ Define the current non-UI game engine contract for an offline single-player simu
 - Extend combat into a fuller battle pipeline with blockers, triggers, and keyword handling layered on the same battle state model.
 - Introduce replay-friendly action metadata and richer engine logs for debugging and training use cases.
 - Add hidden-information views so the same `GameState` can remain authoritative while UI and AI consume filtered perspectives.
+- Consider lightweight AI-facing helper selectors only if they remain pure read layers over the same authoritative `GameState`.
 
 ## Open Questions
 
@@ -89,3 +95,4 @@ Define the current non-UI game engine contract for an offline single-player simu
 - How much action metadata should eventually live beside `GameAction` versus being derived from selectors for UI display?
 - When card effects arrive, should they produce chained `ActionResult` objects or separate effect resolution events?
 - How much initial game setup should be baked into `START_GAME` versus separate setup actions?
+- Should future AI explanation strings remain separate from engine logs, or should a replay system capture them alongside engine actions?

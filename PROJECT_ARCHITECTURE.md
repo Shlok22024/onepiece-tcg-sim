@@ -13,14 +13,21 @@ Define the high-level boundaries for an offline, single-player One Piece TCG pra
 - Deck input now flows through a dedicated parser, validator, and builder pipeline before entering the engine.
 - Read-only selectors now sit beside the engine so UI and AI can inspect `GameState` safely without scattering raw state traversal everywhere.
 - A debug-only React gameplay surface now sits on top of selectors, `getLegalActions`, and `applyAction` so the current loop can be exercised manually without embedding rules in components.
+- A Medium AI v1 heuristic layer now sits beside the engine and must read from selectors plus `getLegalActions`, then execute only through `applyAction`.
 
 ### Proposed Layering
 
 ```text
 React UI
   -> uses selectors and getLegalActions for safe reads and interaction wiring
+  -> may trigger debug AI helpers, but never grants AI special rule shortcuts
   -> dispatches legal engine actions through applyAction
   -> consumes ActionResult and GameState snapshots
+AI services
+  -> read GameState through selectors and getLegalActions
+  -> score legal actions deterministically
+  -> execute chosen actions through applyAction
+  -> return decision explanations and safe stop reasons for debug tooling
 Engine and rules services
   -> own GameState, selectors, legal action generation, phase validation, DON placeholders, cost payment, battle state, combat resolution, and immutable state transitions
 Card and deck models
@@ -33,7 +40,7 @@ Storage adapters
 ### Folder Responsibilities
 
 ```text
-src/ai        AI contracts that must use the same legal GameAction, selectors, getLegalActions, battle timing, and ActionResult flow as human play
+src/ai        AI contracts, heuristic scoring, and turn runners that must use the same legal GameAction, selectors, getLegalActions, battle timing, and ActionResult flow as human play
 src/cards     Static card definitions and placeholder sample card data
 src/deck      Deck definitions, parser, validator, and deck construction helpers
 src/engine    Source-of-truth game state, selectors, legal action generation, phase flow, actions, combat and cost helpers, logs, errors, and transition helpers
@@ -49,8 +56,8 @@ docs          Supplemental notes, diagrams, or ADRs
 - Card effects and scripting.
 - Real counter cards, blockers, triggers, and keywords.
 - External card API integration.
-- AI gameplay behavior.
 - Desktop packaging.
+- Machine learning or search-heavy AI systems.
 
 ## Future Expansion Notes
 
@@ -64,9 +71,11 @@ docs          Supplemental notes, diagrams, or ADRs
 - Extend the new battle-state contract with real counter cards, blockers, triggers, and effects without changing the public action/result contract that the UI and AI will consume.
 - Keep `applyAction` as the final engine authority even as selectors and legal-action helpers become richer, so convenience layers never replace validation.
 - Replace the debug UI with a more polished match interface later without changing the engine contract underneath it.
+- Introduce optional hidden-information read models later so AI can stop seeing the full debug state without duplicating engine ownership.
 
 ## Open Questions
 
 - Should future rule expansion remain reducer-like, or split into command handlers per action type?
 - Will save states be full `GameState` snapshots, action logs, or both?
 - How much engine metadata should eventually be exposed for coaching-style AI explanations?
+- When AI gets more advanced, should explanation strings stay local to AI modules or become first-class replay metadata?

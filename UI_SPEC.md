@@ -11,6 +11,8 @@ Capture the initial presentation boundaries for a practice-first interface while
 - Keep components focused on rendering, interaction wiring, and view-only formatting.
 - Keep gameplay interaction discovery outside components by relying on `getLegalActions` instead of duplicating engine rules in React.
 - Call `applyAction` for all gameplay mutations while surfacing engine log output and rejected-action messages.
+- Expose debug-only Medium AI controls so Player 2 can be stepped or run through a turn without bypassing the engine contract.
+- Surface the latest AI reasoning text for debugging and heuristic verification.
 - Use placeholder text-only card rendering with no copyrighted images or official logos.
 
 ## Explicitly Out Of Scope
@@ -20,6 +22,7 @@ Capture the initial presentation boundaries for a practice-first interface while
 - Animation systems.
 - Accessibility polish for full gameplay flows.
 - Production-ready onboarding or tutorials.
+- Automated production AI autoplay flows.
 
 ## Future Expansion Notes
 
@@ -27,6 +30,7 @@ Capture the initial presentation boundaries for a practice-first interface while
 - Build UI screens on top of engine selectors or view models so components consume stable UI-friendly data shapes.
 - Build keyboard-friendly interaction patterns alongside mouse-first affordances.
 - Add UI testing once user flows become more concrete.
+- Add optional auto-run AI hooks only after the debug surface proves stable for repeated legal turn execution.
 
 ## Open Questions
 

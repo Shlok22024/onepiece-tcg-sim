@@ -1,11 +1,19 @@
 import { useMemo, useState } from 'react'
 
+import {
+  type AIDecision,
+  type AIPlayer,
+} from '../ai/aiTypes.ts'
+import { createMediumAIPlayer } from '../ai/mediumAI.ts'
+import { runAIStep, runAIUntilHumanTurn } from '../ai/runAI.ts'
 import type { GameAction } from '../engine/actionTypes.ts'
+import type { ActionResult } from '../engine/actionTypes.ts'
 import { applyAction } from '../engine/applyAction.ts'
 import { createInitialGameState } from '../engine/createInitialGameState.ts'
 import { getLegalActions } from '../engine/getLegalActions.ts'
 import type { GameState, PlayerId } from '../engine/gameTypes.ts'
 import { getPlayerState } from '../engine/selectors.ts'
+import { AIDebugPanel } from './AIDebugPanel.tsx'
 import { BattleStatePanel } from './BattleStatePanel.tsx'
 import { createDebugStartGameAction } from './debugGameSetup.ts'
 import { describeLegalAction } from './describeLegalAction.ts'
@@ -21,9 +29,26 @@ function createDebugInitialState(): GameState {
   })
 }
 
+const debugAIPlayer: AIPlayer = createMediumAIPlayer('player-2', 'Medium AI (Player 2)')
+
+function createActionFeedback(
+  state: GameState,
+  result: ActionResult,
+): DebugActionFeedback {
+  const label = describeLegalAction(state, result.action)
+
+  return {
+    label,
+    ok: result.ok,
+    message: result.ok ? result.logEntry.message : result.error.message,
+  }
+}
+
 export function DebugGame() {
   const [gameState, setGameState] = useState<GameState>(() => createDebugInitialState())
   const [lastFeedback, setLastFeedback] = useState<DebugActionFeedback | null>(null)
+  const [lastAIDecision, setLastAIDecision] = useState<AIDecision | null>(null)
+  const [lastAIRunSummary, setLastAIRunSummary] = useState<string | null>(null)
 
   const actionGroups = useMemo(() => {
     const playerIds: readonly PlayerId[] = gameState.playerOrder
@@ -34,21 +59,49 @@ export function DebugGame() {
       actions: getLegalActions(gameState, playerId),
     }))
   }, [gameState])
+  const aiLegalActions = useMemo(
+    () => getLegalActions(gameState, debugAIPlayer.controlledPlayerId),
+    [gameState],
+  )
 
   function runAction(action: GameAction) {
     const result = applyAction(gameState, action)
-    const label = describeLegalAction(gameState, action)
 
     setGameState(result.state)
-    setLastFeedback({
-      label,
-      ok: result.ok,
-      message: result.ok ? result.logEntry.message : result.error.message,
-    })
+    setLastFeedback(createActionFeedback(gameState, result))
   }
 
   function startGame() {
+    setLastAIDecision(null)
+    setLastAIRunSummary(null)
     runAction(createDebugStartGameAction(Date.now()))
+  }
+
+  function handleRunAIStep() {
+    const step = runAIStep(gameState, debugAIPlayer)
+
+    setLastAIDecision(step.decision)
+    setLastAIRunSummary(step.stoppedReason)
+
+    if (step.actionResult !== null) {
+      setGameState(step.state)
+      setLastFeedback(createActionFeedback(step.previousState, step.actionResult))
+    }
+  }
+
+  function handleRunAITurn() {
+    const runResult = runAIUntilHumanTurn(gameState, debugAIPlayer)
+    const latestStep = runResult.steps.at(-1)
+
+    setLastAIDecision(latestStep?.decision ?? null)
+    setLastAIRunSummary(runResult.stoppedReason)
+    setGameState(runResult.state)
+
+    if (latestStep !== undefined && latestStep.actionResult !== null) {
+      setLastFeedback(
+        createActionFeedback(latestStep.previousState, latestStep.actionResult),
+      )
+    }
   }
 
   return (
@@ -73,7 +126,18 @@ export function DebugGame() {
           getActionLabel={(action) => describeLegalAction(gameState, action)}
           onRunAction={runAction}
         />
-        <BattleStatePanel state={gameState} />
+        <div className="debug-layout__sidebar">
+          <AIDebugPanel
+            aiPlayer={debugAIPlayer}
+            canRunAI={aiLegalActions.length > 0}
+            legalActionCount={aiLegalActions.length}
+            latestDecision={lastAIDecision}
+            latestRunSummary={lastAIRunSummary}
+            onRunAIStep={handleRunAIStep}
+            onRunAITurn={handleRunAITurn}
+          />
+          <BattleStatePanel state={gameState} />
+        </div>
       </div>
 
       <div className="boards-grid">

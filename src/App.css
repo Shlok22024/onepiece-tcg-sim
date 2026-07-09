@@ -135,11 +135,21 @@
   gap: 20px;
 }
 
+.debug-layout__sidebar {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+}
+
 .boards-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .actions-panel {
+  align-self: start;
+}
+
+.ai-panel {
   align-self: start;
 }
 
@@ -168,6 +178,11 @@
 .action-button-grid {
   display: grid;
   gap: 10px;
+}
+
+.action-button-grid--inline {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
 }
 
 .action-button {
@@ -292,6 +307,10 @@ code {
 @media (max-width: 1120px) {
   .debug-layout__columns,
   .boards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-button-grid--inline {
     grid-template-columns: 1fr;
   }
 }
