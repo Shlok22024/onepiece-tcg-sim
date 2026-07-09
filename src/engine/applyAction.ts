@@ -10,6 +10,7 @@ import {
 import { createGameError, GameErrorCode } from './gameErrors.ts'
 import { appendGameLog, createGameLogEntry } from './gameLog.ts'
 import type {
+  BattleState,
   CardInstance,
   CardInstanceId,
   GameState,
@@ -18,7 +19,7 @@ import type {
   PlayerZones,
   Zone,
 } from './gameTypes.ts'
-import { Zone as PlayerZone } from './gameTypes.ts'
+import { BattleStep, BattleTargetType, Zone as PlayerZone } from './gameTypes.ts'
 import { payCost } from './payCost.ts'
 import {
   GamePhase,
@@ -34,6 +35,7 @@ const supportedActions = new Set<ActionType>([
   ActionType.EndTurn,
   ActionType.PlayCard,
   ActionType.DeclareAttack,
+  ActionType.PassCounter,
   ActionType.ResolveAttack,
 ])
 
@@ -222,8 +224,30 @@ function replaceCardInstance(
   }
 }
 
+function replaceBattleState(
+  state: GameState,
+  battle: BattleState | null,
+  updatedAt: number,
+): GameState {
+  return {
+    ...state,
+    battle,
+    updatedAt,
+  }
+}
+
 function getCardPower(cardInstance: CardInstance): number {
   return sampleCardsById[cardInstance.cardId]?.power ?? 0
+}
+
+function getCardName(cardInstanceId: CardInstanceId, state: GameState): string {
+  const cardInstance = state.cardInstances[cardInstanceId]
+
+  if (cardInstance === undefined) {
+    return cardInstanceId
+  }
+
+  return sampleCardsById[cardInstance.cardId]?.name ?? cardInstance.cardId
 }
 
 function updateCardZone(
@@ -327,6 +351,39 @@ function validateActivePlayerAction(
   }
 
   return null
+}
+
+function validateNoUnresolvedBattle(
+  state: GameState,
+  action: GameAction,
+  message: string,
+): ActionResult | null {
+  if (state.battle !== null) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.UnresolvedBattle,
+      message,
+    )
+  }
+
+  return null
+}
+
+function requireBattleState(
+  state: GameState,
+  action: GameAction,
+): BattleState | ActionResult {
+  if (state.battle === null) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.NoActiveBattle,
+      'There is no active battle to continue.',
+    )
+  }
+
+  return state.battle
 }
 
 function phaseLabel(phase: GamePhase): string {
@@ -520,6 +577,7 @@ function startGame(state: GameState, action: GameAction): ActionResult {
       turnNumber: 1,
       hasPerformedNormalDraw: false,
     },
+    battle: null,
     updatedAt,
     winnerId: undefined,
     loserId: undefined,
@@ -538,6 +596,16 @@ function advancePhase(state: GameState, action: GameAction): ActionResult {
 
   if (validationFailure !== null) {
     return validationFailure
+  }
+
+  const battleFailure = validateNoUnresolvedBattle(
+    state,
+    action,
+    'Cannot advance the phase while a battle is unresolved.',
+  )
+
+  if (battleFailure !== null) {
+    return battleFailure
   }
 
   const nextPhase = getNextPhase(state.phase)
@@ -667,6 +735,16 @@ function playCard(state: GameState, action: GameAction): ActionResult {
     return validationFailure
   }
 
+  const battleFailure = validateNoUnresolvedBattle(
+    state,
+    action,
+    'PLAY_CARD is not legal while a battle is unresolved.',
+  )
+
+  if (battleFailure !== null) {
+    return battleFailure
+  }
+
   if (state.phase !== GamePhase.Main) {
     return createFailureResult(
       state,
@@ -763,13 +841,8 @@ function playCard(state: GameState, action: GameAction): ActionResult {
   )
 }
 
-function resolveAttackPayload(
-  action: GameAction,
-): AttackPayload | null {
-  if (
-    action.type === ActionType.DeclareAttack ||
-    action.type === ActionType.ResolveAttack
-  ) {
+function resolveAttackPayload(action: GameAction): AttackPayload | null {
+  if (action.type === ActionType.DeclareAttack) {
     return action.payload
   }
 
@@ -784,6 +857,7 @@ function validateAttackParticipants(
   readonly attacker: CardInstance
   readonly target: CardInstance
   readonly defendingPlayer: PlayerState
+  readonly targetType: BattleTargetType
 } | ActionResult {
   const activePlayer = resolveActivePlayer(state)
 
@@ -863,6 +937,7 @@ function validateAttackParticipants(
       attacker,
       target,
       defendingPlayer,
+      targetType: BattleTargetType.Leader,
     }
   }
 
@@ -892,6 +967,251 @@ function validateAttackParticipants(
       action,
       GameErrorCode.InvalidAttackTarget,
       'The defending player could not be resolved for the chosen character target.',
+    )
+  }
+
+  return {
+    attacker,
+    target,
+    defendingPlayer,
+    targetType: BattleTargetType.Character,
+  }
+}
+
+function createBattleState(
+  state: GameState,
+  attacker: CardInstance,
+  target: CardInstance,
+  targetType: BattleTargetType,
+  defendingPlayer: PlayerState,
+): BattleState {
+  return {
+    attackerInstanceId: attacker.instanceId,
+    attackerControllerId: attacker.controllerId,
+    targetInstanceId: target.instanceId,
+    targetControllerId: target.controllerId,
+    targetType,
+    attackStartedAtTurn: state.turn.turnNumber,
+    currentBattleStep: BattleStep.CounterWindow,
+    defendingPlayerId: defendingPlayer.id,
+    counterPowerAdded: 0,
+    awaitingCounterResponse: true,
+  }
+}
+
+function declareAttack(state: GameState, action: GameAction): ActionResult {
+  const validationFailure = validateActivePlayerAction(state, action)
+
+  if (validationFailure !== null) {
+    return validationFailure
+  }
+
+  if (action.type !== ActionType.DeclareAttack) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAction,
+      'A DECLARE_ATTACK action is required to declare an attack.',
+    )
+  }
+
+  if (state.phase !== GamePhase.Main) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.IllegalPhaseAction,
+      'Attacks are only legal during the MAIN phase in this milestone.',
+    )
+  }
+
+  if (state.battle !== null) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.BattleAlreadyInProgress,
+      'A new attack cannot be declared while another battle is unresolved.',
+    )
+  }
+
+  const payload = resolveAttackPayload(action)
+
+  if (payload === null) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAction,
+      'An attack payload is required to declare combat.',
+    )
+  }
+
+  const validatedParticipants = validateAttackParticipants(state, action, payload)
+
+  if ('ok' in validatedParticipants) {
+    return validatedParticipants
+  }
+
+  const { attacker, target, defendingPlayer, targetType } = validatedParticipants
+  const restedAttacker: CardInstance = {
+    ...attacker,
+    isRested: true,
+  }
+  const battleState = createBattleState(
+    state,
+    restedAttacker,
+    target,
+    targetType,
+    defendingPlayer,
+  )
+  const declaredState = replaceBattleState(
+    replaceCardInstance(state, restedAttacker, action.createdAt),
+    battleState,
+    action.createdAt,
+  )
+  const counterWindowState = appendActionLog(
+    declaredState,
+    action,
+    `Counter window opened for ${defendingPlayer.displayName}.`,
+    'counter-window-opened',
+  )
+  const attackerName = getCardName(attacker.instanceId, state)
+  const targetName = getCardName(target.instanceId, state)
+
+  return createSuccessResult(
+    counterWindowState,
+    action,
+    `${state.players[action.playerId].displayName} declared an attack with ${attackerName} against ${targetName}.`,
+  )
+}
+
+function passCounter(state: GameState, action: GameAction): ActionResult {
+  const gameStartedFailure = validateGameStarted(state, action)
+
+  if (gameStartedFailure !== null) {
+    return gameStartedFailure
+  }
+
+  if (action.type !== ActionType.PassCounter) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAction,
+      'A PASS_COUNTER action is required to pass the counter window.',
+    )
+  }
+
+  const battleOrFailure = requireBattleState(state, action)
+
+  if ('ok' in battleOrFailure) {
+    return battleOrFailure
+  }
+
+  if (!battleOrFailure.awaitingCounterResponse) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.CounterWindowNotOpen,
+      'The counter window is not currently open.',
+    )
+  }
+
+  if (action.playerId !== battleOrFailure.defendingPlayerId) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidCounterResponder,
+      'Only the defending player can respond to the counter window.',
+    )
+  }
+
+  const nextBattleState: BattleState = {
+    ...battleOrFailure,
+    currentBattleStep: BattleStep.ReadyToResolve,
+    awaitingCounterResponse: false,
+  }
+  const nextState = replaceBattleState(state, nextBattleState, action.createdAt)
+  const defendingPlayer = state.players[action.playerId]
+
+  return createSuccessResult(
+    nextState,
+    action,
+    `${defendingPlayer.displayName} passed the counter window.`,
+  )
+}
+
+function resolveBattleParticipants(
+  state: GameState,
+  action: GameAction,
+  battle: BattleState,
+): {
+  readonly attacker: CardInstance
+  readonly target: CardInstance
+  readonly defendingPlayer: PlayerState
+} | ActionResult {
+  const attacker = state.cardInstances[battle.attackerInstanceId]
+  const target = state.cardInstances[battle.targetInstanceId]
+
+  if (attacker === undefined || target === undefined) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.UnknownCardInstance,
+      'The stored battle participants could not be found.',
+    )
+  }
+
+  const defendingPlayer = resolvePlayer(state, battle.defendingPlayerId)
+
+  if (defendingPlayer === null) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAttackTarget,
+      'The defending player could not be resolved for the current battle.',
+    )
+  }
+
+  if (attacker.controllerId !== battle.attackerControllerId) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAttacker,
+      'The stored attacker no longer matches the current battle state.',
+    )
+  }
+
+  if (
+    attacker.zone !== PlayerZone.Leader &&
+    attacker.zone !== PlayerZone.CharacterArea
+  ) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAttacker,
+      'The stored attacker is no longer in a legal battle zone.',
+    )
+  }
+
+  if (
+    battle.targetType === BattleTargetType.Leader &&
+    target.zone !== PlayerZone.Leader
+  ) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAttackTarget,
+      'The stored leader target is no longer valid.',
+    )
+  }
+
+  if (
+    battle.targetType === BattleTargetType.Character &&
+    target.zone !== PlayerZone.CharacterArea
+  ) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.InvalidAttackTarget,
+      'The stored character target is no longer valid.',
     )
   }
 
@@ -946,8 +1266,8 @@ function dealLeaderDamage(
   const lifeZone = defendingPlayer.zones[PlayerZone.Life]
 
   if (lifeZone.length === 0) {
-    return {
-      state: {
+    const finishedState = appendActionLog(
+      {
         ...state,
         status: 'COMPLETE',
         gameOver: true,
@@ -956,7 +1276,14 @@ function dealLeaderDamage(
         endReason: 'LEADER_DAMAGE_AT_ZERO_LIFE',
         updatedAt: action.createdAt,
       },
-      message: `${state.players[action.playerId].displayName} dealt the final damage and won the game.`,
+      action,
+      `${state.players[action.playerId].displayName} dealt the final damage and won the game.`,
+      'game-over',
+    )
+
+    return {
+      state: finishedState,
+      message: 'The attack ended the game.',
     }
   }
 
@@ -971,15 +1298,20 @@ function dealLeaderDamage(
     ...state.cardInstances[lifeCardId],
     zone: PlayerZone.Hand,
   }
-  const nextState = replaceCardInstance(
-    replacePlayerState(state, updatedDefendingPlayer, action.createdAt),
-    updatedLifeCard,
-    action.createdAt,
+  const nextState = appendActionLog(
+    replaceCardInstance(
+      replacePlayerState(state, updatedDefendingPlayer, action.createdAt),
+      updatedLifeCard,
+      action.createdAt,
+    ),
+    action,
+    `${updatedDefendingPlayer.displayName} lost 1 life and added that life card to hand.`,
+    'life-damage',
   )
 
   return {
     state: nextState,
-    message: `${updatedDefendingPlayer.displayName} lost 1 life and added that life card to hand.`,
+    message: 'The attack dealt 1 life damage.',
   }
 }
 
@@ -989,20 +1321,20 @@ function resolveCombat(
   attacker: CardInstance,
   target: CardInstance,
   defendingPlayer: PlayerState,
+  battle: BattleState,
 ): {
   readonly state: GameState
   readonly message: string
 } {
-  if (target.zone === PlayerZone.Leader) {
+  if (battle.targetType === BattleTargetType.Leader) {
     return dealLeaderDamage(state, action, defendingPlayer)
   }
 
   const attackerPower = getCardPower(attacker)
-  const targetPower = getCardPower(target)
+  const targetPower = getCardPower(target) + battle.counterPowerAdded
   const attackerCardType = sampleCardsById[attacker.cardId]?.type
   const targetCardType = sampleCardsById[target.cardId]?.type
   let nextState = state
-  const battleMessages: string[] = []
 
   if (attackerPower > targetPower) {
     nextState = knockOutCharacter(
@@ -1012,8 +1344,14 @@ function resolveCombat(
       target,
       'target-ko',
     )
-    battleMessages.push('The stronger attacker KO\'d the defending character.')
-  } else if (
+
+    return {
+      state: nextState,
+      message: 'The stronger attacker KO\'d the defending character.',
+    }
+  }
+
+  if (
     attackerPower < targetPower &&
     attackerCardType === CardType.Character &&
     targetCardType === CardType.Character
@@ -1029,72 +1367,90 @@ function resolveCombat(
         'attacker-ko',
       )
     }
-    battleMessages.push('The weaker attacking character was KO\'d in battle.')
-  } else {
-    battleMessages.push('The battle ended with no characters KO\'d.')
+
+    return {
+      state: nextState,
+      message: 'The weaker attacking character was KO\'d in battle.',
+    }
   }
 
   return {
     state: nextState,
-    message: battleMessages.join(' '),
+    message: 'The battle ended with no characters KO\'d.',
   }
 }
 
-function executeImmediateAttack(
-  state: GameState,
-  action: GameAction,
-): ActionResult {
+function resolveAttack(state: GameState, action: GameAction): ActionResult {
   const validationFailure = validateActivePlayerAction(state, action)
 
   if (validationFailure !== null) {
     return validationFailure
   }
 
-  if (state.phase !== GamePhase.Main) {
-    return createFailureResult(
-      state,
-      action,
-      GameErrorCode.IllegalPhaseAction,
-      'Attacks are only legal during the MAIN phase in this milestone.',
-    )
-  }
-
-  const payload = resolveAttackPayload(action)
-
-  if (payload === null) {
+  if (action.type !== ActionType.ResolveAttack) {
     return createFailureResult(
       state,
       action,
       GameErrorCode.InvalidAction,
-      'An attack payload is required to resolve combat.',
+      'A RESOLVE_ATTACK action is required to resolve combat.',
     )
   }
 
-  const validatedParticipants = validateAttackParticipants(state, action, payload)
+  const battleOrFailure = requireBattleState(state, action)
 
-  if ('ok' in validatedParticipants) {
-    return validatedParticipants
+  if ('ok' in battleOrFailure) {
+    return battleOrFailure
   }
 
-  const { attacker, target, defendingPlayer } = validatedParticipants
-  const restedAttacker: CardInstance = {
-    ...attacker,
-    isRested: true,
+  if (battleOrFailure.attackerControllerId !== action.playerId) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.NotActivePlayer,
+      'Only the attacking active player can resolve the current battle.',
+    )
   }
-  const declaredState = replaceCardInstance(state, restedAttacker, action.createdAt)
+
+  if (battleOrFailure.awaitingCounterResponse) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.BattleNotReadyToResolve,
+      'The current battle cannot resolve until the counter window is closed.',
+    )
+  }
+
+  if (battleOrFailure.currentBattleStep !== BattleStep.ReadyToResolve) {
+    return createFailureResult(
+      state,
+      action,
+      GameErrorCode.BattleNotReadyToResolve,
+      'The current battle is not ready to resolve.',
+    )
+  }
+
+  const participants = resolveBattleParticipants(state, action, battleOrFailure)
+
+  if ('ok' in participants) {
+    return participants
+  }
+
+  const { attacker, target, defendingPlayer } = participants
+  const clearedBattleState = replaceBattleState(state, null, action.createdAt)
   const resolution = resolveCombat(
-    declaredState,
+    clearedBattleState,
     action,
-    restedAttacker,
+    attacker,
     target,
     defendingPlayer,
+    battleOrFailure,
   )
-  const targetName = sampleCardsById[target.cardId]?.name ?? target.cardId
+  const targetName = getCardName(target.instanceId, state)
 
   return createSuccessResult(
     resolution.state,
     action,
-    `${state.players[action.playerId].displayName} attacked ${targetName}. ${resolution.message}`,
+    `${state.players[action.playerId].displayName} resolved the attack against ${targetName}. ${resolution.message}`,
   )
 }
 
@@ -1103,6 +1459,16 @@ function endTurn(state: GameState, action: GameAction): ActionResult {
 
   if (validationFailure !== null) {
     return validationFailure
+  }
+
+  const battleFailure = validateNoUnresolvedBattle(
+    state,
+    action,
+    'END_TURN is not legal while a battle is unresolved.',
+  )
+
+  if (battleFailure !== null) {
+    return battleFailure
   }
 
   if (state.phase !== GamePhase.Main && state.phase !== GamePhase.End) {
@@ -1177,8 +1543,11 @@ export function applyAction(
     case ActionType.PlayCard:
       return playCard(state, action)
     case ActionType.DeclareAttack:
+      return declareAttack(state, action)
+    case ActionType.PassCounter:
+      return passCounter(state, action)
     case ActionType.ResolveAttack:
-      return executeImmediateAttack(state, action)
+      return resolveAttack(state, action)
     case ActionType.EndTurn:
       return endTurn(state, action)
     default:

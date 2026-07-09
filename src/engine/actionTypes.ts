@@ -9,6 +9,7 @@ export enum ActionType {
   EndTurn = 'END_TURN',
   PlayCard = 'PLAY_CARD',
   DeclareAttack = 'DECLARE_ATTACK',
+  PassCounter = 'PASS_COUNTER',
   ResolveAttack = 'RESOLVE_ATTACK',
   ActivateEffect = 'ACTIVATE_EFFECT',
 }
@@ -67,9 +68,12 @@ export interface DeclareAttackAction extends BaseGameAction {
   readonly payload: AttackPayload
 }
 
+export interface PassCounterAction extends BaseGameAction {
+  readonly type: ActionType.PassCounter
+}
+
 export interface ResolveAttackAction extends BaseGameAction {
   readonly type: ActionType.ResolveAttack
-  readonly payload: AttackPayload
 }
 
 export interface UnsupportedGameAction extends BaseGameAction {
@@ -81,6 +85,7 @@ export interface UnsupportedGameAction extends BaseGameAction {
     | ActionType.EndTurn
     | ActionType.PlayCard
     | ActionType.DeclareAttack
+    | ActionType.PassCounter
     | ActionType.ResolveAttack
   >
   readonly payload?: Readonly<Record<string, unknown>>
@@ -93,6 +98,7 @@ export type GameAction =
   | EndTurnAction
   | PlayCardAction
   | DeclareAttackAction
+  | PassCounterAction
   | ResolveAttackAction
   | UnsupportedGameAction
 

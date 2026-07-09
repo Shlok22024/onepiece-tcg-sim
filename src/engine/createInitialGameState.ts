@@ -25,6 +25,7 @@ export function createInitialGameState(
       turnNumber: 0,
       hasPerformedNormalDraw: false,
     },
+    battle: null,
     log: [],
     createdAt: now,
     updatedAt: now,

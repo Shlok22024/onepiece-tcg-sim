@@ -9,6 +9,19 @@ export type GameId = string
 export type GameStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETE'
 export type GameEndReason = 'LEADER_DAMAGE_AT_ZERO_LIFE'
 
+export enum BattleTargetType {
+  Leader = 'LEADER',
+  Character = 'CHARACTER',
+}
+
+export enum BattleStep {
+  None = 'NONE',
+  AttackDeclared = 'ATTACK_DECLARED',
+  CounterWindow = 'COUNTER_WINDOW',
+  ReadyToResolve = 'READY_TO_RESOLVE',
+  Resolved = 'RESOLVED',
+}
+
 export enum Zone {
   Leader = 'LEADER',
   Deck = 'DECK',
@@ -65,6 +78,19 @@ export interface TurnState {
   readonly hasPerformedNormalDraw: boolean
 }
 
+export interface BattleState {
+  readonly attackerInstanceId: CardInstanceId
+  readonly attackerControllerId: PlayerId
+  readonly targetInstanceId: CardInstanceId
+  readonly targetControllerId: PlayerId
+  readonly targetType: BattleTargetType
+  readonly attackStartedAtTurn: number
+  readonly currentBattleStep: BattleStep
+  readonly defendingPlayerId: PlayerId
+  readonly counterPowerAdded: number
+  readonly awaitingCounterResponse: boolean
+}
+
 export interface GameLogEntry {
   readonly id: string
   readonly actionId: string
@@ -83,6 +109,7 @@ export interface GameState {
   readonly playerOrder: readonly PlayerId[]
   readonly cardInstances: Record<CardInstanceId, CardInstance>
   readonly turn: TurnState
+  readonly battle: BattleState | null
   readonly log: readonly GameLogEntry[]
   readonly createdAt: number
   readonly updatedAt: number
